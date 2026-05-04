@@ -55,3 +55,28 @@ sequenceDiagram
     EVT-->>AN: Consume event
     AN->>PG: Update chat metrics
 ```
+
+## Sequence 3: Prototype — mesh join + invite ring (letsgo)
+
+This matches **`services/meeting-go`** + **`frontend`** behavior in Docker/local dev: no SFU, no DynamoDB. Callee must have the app open with an active **notify** WebSocket.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant A as Caller browser
+    participant MTG as meeting-go
+    participant B as Callee browser
+    participant PG as PostgreSQL
+
+    A->>MTG: WSS /meeting/ws/v1/notify (JWT)
+    B->>MTG: WSS /meeting/ws/v1/notify (JWT)
+    A->>MTG: invite(targetEmail, roomId, callId)
+    MTG->>PG: LookupUserByEmail
+    MTG-->>B: incoming-call(from, roomId, callId)
+    B-->>B: Ring + optional Notification API
+    B->>MTG: invite-accepted(callId) or invite-decline(callId)
+    MTG-->>A: invite-accepted / invite-declined
+    A->>MTG: WSS /meeting/ws/v1/room (JWT, roomId)
+    B->>MTG: WSS /meeting/ws/v1/room (JWT, roomId)
+    A<<->>B: WebRTC mesh (SDP/ICE via meeting-go relay)
+```

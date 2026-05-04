@@ -1,0 +1,79 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: letsgo
+      POSTGRES_USER: letsgo
+      POSTGRES_PASSWORD: letsgo
+    # Host port defaults to 5433 so a local Postgres on 5432 does not block compose.
+    ports:
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U letsgo -d letsgo"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+
+  migrate:
+    image: migrate/migrate:v4.17.1
+    command:
+      [
+        "-path",
+        "/migrations",
+        "-database",
+        "postgres://letsgo:letsgo@postgres:5432/letsgo?sslmode=disable",
+        "up",
+      ]
+    volumes:
+      - ./migrations/go:/migrations
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  auth-java:
+    build:
+      context: ./services/auth-java
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/letsgo
+      SPRING_DATASOURCE_USERNAME: letsgo
+      SPRING_DATASOURCE_PASSWORD: letsgo
+      LETSGO_JWT_SECRET: "${LETSGO_JWT_SECRET:-changeme-letsgo-dev-secret-32chars-min!!}"
+      LETSGO_CORS_ALLOWED_ORIGINS: "http://localhost:3000,http://localhost:5173"
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  meeting-go:
+    build:
+      context: ./services/meeting-go
+    environment:
+      DATABASE_URL: postgres://letsgo:letsgo@postgres:5432/letsgo?sslmode=disable
+      LETSGO_JWT_SECRET: "${LETSGO_JWT_SECRET:-changeme-letsgo-dev-secret-32chars-min!!}"
+      CORS_ALLOWED_ORIGINS: "http://localhost:3000,http://localhost:5173"
+      PORT: "8081"
+    ports:
+      - "8081:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - auth-java
+      - meeting-go
+
+volumes:
+  postgres_data:

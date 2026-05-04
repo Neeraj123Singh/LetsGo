@@ -11,6 +11,8 @@ It also includes platform plans for Kubernetes, Terraform, Jenkins CI/CD, observ
 
 ## Document Map
 
+- `changes/README.md` - index of dated implementation session logs
+- `changes/2026-05-04.md` - example session: auth + meeting-go + frontend mesh/invite slice
 - `product-overview.md` - business and product-level overview, personas, and goals
 - `architecture/system-overview.md` - end-to-end architecture and technology choices
 - `monorepo-split/repo-strategy.md` - how to structure now and split into separate repos later

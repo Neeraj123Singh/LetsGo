@@ -4,6 +4,8 @@
 
 Build the core business API service with transactional workflows, event publication, and search indexing hooks.
 
+**Related in this monorepo:** real-time **meeting signaling** is implemented separately in **`services/meeting-go/`** (room + notify WebSockets, user lookup). When the platform “backend-go” service exists, decide whether meeting signaling remains its own deployable or merges behind one ingress path; see `docs/changes/2026-05-04.md`.
+
 ## Milestones
 
 1. Scaffold service, config system, and API framework.

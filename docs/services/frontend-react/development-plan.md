@@ -4,6 +4,8 @@
 
 Deliver a production-ready React frontend that supports authentication, core workflows, search, and analytics-driven UI views.
 
+**Implemented in `frontend/` today:** auth screens, home, group **mesh** video (`GroupCallPanel`), **`/meeting`** WebSocket clients (room + notify), invite/ring UX, optional ML camera effects. See `docs/changes/2026-05-04.md`.
+
 ## Milestones
 
 1. Bootstrap app with routing, layout, and design system.

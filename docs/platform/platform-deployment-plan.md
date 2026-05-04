@@ -1,5 +1,7 @@
 # Platform Deployment Plan
 
+For what is **already runnable locally** (Docker Compose: Postgres, auth-java, meeting-go, React/nginx), see **`docs/changes/2026-05-04.md`** and **`README.md`** at the repo root. The phases below are the **target** AWS/Kubernetes rollout.
+
 ## Phase 1: Foundation
 
 - Provision VPC, subnets, routing, NAT, and security groups with Terraform.

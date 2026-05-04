@@ -24,6 +24,10 @@ This product is a cloud-native video meeting platform with:
 - Search and discovery: find meetings/messages through Elasticsearch
 - Reliability and observability: monitoring, alerting, tracing
 
+## Prototype in the letsgo repository (2026)
+
+The runnable application today demonstrates **group mesh video**, **invite-by-email** with a **notify WebSocket** and **ringing / Accept–Decline** UI, **browser notifications** for incoming calls, and **optional on-device background blur or still-image background** during a call. These align with the product goals above while using a smaller backend surface than the full multi-store design. For the exact stack and file list, see `docs/changes/2026-05-04.md` and the **Letsgo repository** section in `docs/architecture/system-overview.md`.
+
 ## Platform and Technology Fit
 
 - React frontend for user experience

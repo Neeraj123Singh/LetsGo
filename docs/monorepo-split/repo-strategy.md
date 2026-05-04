@@ -9,9 +9,13 @@ Start with a single platform repository for fast cross-service integration, then
 ```text
 /
   docs/
+    changes/          # dated implementation session logs (see changes/README.md)
   frontend/
+  migrations/go/      # SQL migrations (shared Postgres; golang-migrate in Docker)
   services/
-    backend-go/
+    auth-java/        # Spring Boot JWT auth (letsgo naming)
+    meeting-go/       # group mesh signaling + notify invites (letsgo slice)
+    backend-go/       # target platform API (placeholder / future)
     analytics-python/
     auth-springboot/
   infra/
@@ -21,15 +25,17 @@ Start with a single platform repository for fast cross-service integration, then
   observability/
 ```
 
+The **letsgo** runnable stack uses **`services/auth-java/`**, **`services/meeting-go/`**, and **`frontend/`** with root **`docker-compose.yml`**; paths above that still say `auth-springboot` / `backend-go` describe the **target** split when services are promoted to their own repos.
+
 ## Split Plan (Future State)
 
 Create these repositories:
 
 - `platform-infra` (Terraform, shared K8s base, Jenkins shared libs, observability assets)
 - `frontend-react`
-- `backend-go`
+- `backend-go` (or split **meeting-signaling** if meeting-go stays a dedicated deployable)
 - `analytics-python`
-- `auth-springboot`
+- `auth-springboot` (maps to **`auth-java`** in this monorepo today)
 
 ## Shared Standards Across Repos
 
