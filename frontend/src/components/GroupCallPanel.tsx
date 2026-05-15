@@ -11,6 +11,22 @@ import {
   showIncomingCallNotification,
 } from "../lib/notifications";
 
+// Structured, prefixed logger so all call-related diagnostics are easy to
+// filter in the browser console (filter on `[letsgo:call]`).
+const LOG = "[letsgo:call]";
+const linfo = (...a: unknown[]) => console.info(LOG, ...a);
+const lwarn = (...a: unknown[]) => console.warn(LOG, ...a);
+
+function describeStream(s: MediaStream | null | undefined): Record<string, unknown> {
+  if (!s) return { stream: null };
+  return {
+    id: s.id,
+    active: s.active,
+    video: s.getVideoTracks().map((t) => ({ id: t.id, label: t.label, state: t.readyState, muted: t.muted })),
+    audio: s.getAudioTracks().map((t) => ({ id: t.id, label: t.label, state: t.readyState, muted: t.muted })),
+  };
+}
+
 type PeerInfo = { userId: string; email: string; displayName: string };
 
 type IncomingCall = {
@@ -31,9 +47,10 @@ function PeerTile({ stream, label }: { stream: MediaStream; label: string }) {
   const ref = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     if (ref.current) {
+      linfo("PeerTile srcObject set", { label, stream: describeStream(stream) });
       ref.current.srcObject = stream;
     }
-  }, [stream]);
+  }, [stream, label]);
   return (
     <div className="video-tile meeting-peer-tile">
       <span className="video-label">{label}</span>
@@ -84,12 +101,28 @@ export function GroupCallPanel({ me }: { me: UserResponse }) {
   const displayStreamRef = useRef<MediaStream | null>(null);
   useEffect(() => {
     displayStreamRef.current = displayStream;
+    linfo("displayStream changed", describeStream(displayStream));
   }, [displayStream]);
+
+  useEffect(() => {
+    linfo("rawLocal changed", describeStream(rawLocal));
+  }, [rawLocal]);
+
+  useEffect(() => {
+    if (effectError) {
+      lwarn("effectError surfaced to UI:", effectError);
+    }
+  }, [effectError]);
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     if (localVideoRef.current) {
-      localVideoRef.current.srcObject = displayStream ?? rawLocal ?? null;
+      const next = displayStream ?? rawLocal ?? null;
+      linfo("local <video> srcObject set", {
+        source: displayStream ? "displayStream" : rawLocal ? "rawLocal" : "null",
+        stream: describeStream(next),
+      });
+      localVideoRef.current.srcObject = next;
     }
   }, [displayStream, rawLocal]);
 
@@ -142,13 +175,40 @@ export function GroupCallPanel({ me }: { me: UserResponse }) {
       if (pc) {
         return pc;
       }
-      const stream = displayStreamRef.current;
-      if (!stream) {
+      // Use displayStream when ready; fall back to rawLocal so peer connections
+      // are not dropped when an offer arrives before the ML canvas stream is set.
+      const videoStream = displayStreamRef.current ?? rawLocalRef.current;
+      const audioStream = rawLocalRef.current;
+      if (!videoStream) {
+        lwarn("getOrCreatePc skipped: no videoStream yet", { peerId });
         return null;
       }
       pc = new RTCPeerConnection({ iceServers: DEFAULT_ICE_SERVERS });
       pcsRef.current.set(peerId, pc);
-      stream.getTracks().forEach((t) => pc!.addTrack(t, stream));
+      linfo("RTCPeerConnection created", {
+        peerId,
+        videoFrom: videoStream.id,
+        audioFrom: audioStream?.id ?? null,
+      });
+      // Video comes from the (possibly canvas-processed) display stream.
+      videoStream.getVideoTracks().forEach((t) => {
+        linfo("addTrack video", { peerId, trackId: t.id });
+        pc!.addTrack(t, videoStream);
+      });
+      // Audio always comes from the raw local stream (canvas.captureStream() is video-only).
+      // Crucially, associate the audio track with videoStream — not audioStream — so that
+      // both tracks share the same stream ID in the SDP. If they had different IDs the
+      // remote ontrack handler would receive two separate MediaStream objects and
+      // setRemoteStreams would overwrite the video stream with the audio-only stream,
+      // leaving the remote tile blank.
+      if (audioStream) {
+        audioStream.getAudioTracks().forEach((t) => {
+          linfo("addTrack audio", { peerId, trackId: t.id });
+          pc!.addTrack(t, videoStream);
+        });
+      }
+      pc.oniceconnectionstatechange = () => linfo("ICE state", { peerId, state: pc!.iceConnectionState });
+      pc.onconnectionstatechange = () => linfo("PC state", { peerId, state: pc!.connectionState });
       pc.onicecandidate = (ev) => {
         if (ev.candidate) {
           const j = ev.candidate.toJSON();
@@ -163,6 +223,12 @@ export function GroupCallPanel({ me }: { me: UserResponse }) {
       };
       pc.ontrack = (ev) => {
         const [remote] = ev.streams;
+        linfo("ontrack fired", {
+          peerId,
+          kind: ev.track.kind,
+          streamCount: ev.streams.length,
+          streamId: remote?.id,
+        });
         if (remote) {
           setRemoteStreams((prev) => ({ ...prev, [peerId]: remote }));
         }
@@ -284,18 +350,26 @@ export function GroupCallPanel({ me }: { me: UserResponse }) {
       return;
     }
     const v = displayStream.getVideoTracks()[0];
-    const a = displayStream.getAudioTracks()[0];
-    pcsRef.current.forEach((pc) => {
+    // Audio always comes from rawLocal; canvas.captureStream() carries no audio track.
+    const a = rawLocal?.getAudioTracks()[0];
+    linfo("replaceTrack sync running", {
+      peers: pcsRef.current.size,
+      newVideoTrack: v?.id,
+      newAudioTrack: a?.id,
+    });
+    pcsRef.current.forEach((pc, peerId) => {
       pc.getSenders().forEach((sender) => {
-        if (sender.track?.kind === "video" && v) {
+        if (sender.track?.kind === "video" && v && sender.track.id !== v.id) {
+          linfo("replaceTrack video", { peerId, from: sender.track.id, to: v.id });
           void sender.replaceTrack(v);
         }
-        if (sender.track?.kind === "audio" && a) {
+        if (sender.track?.kind === "audio" && a && sender.track.id !== a.id) {
+          linfo("replaceTrack audio", { peerId, from: sender.track.id, to: a.id });
           void sender.replaceTrack(a);
         }
       });
     });
-  }, [displayStream, joined]);
+  }, [displayStream, joined, rawLocal]);
 
   useEffect(() => {
     let ws: WebSocket;
@@ -359,13 +433,20 @@ export function GroupCallPanel({ me }: { me: UserResponse }) {
 
   async function ensureCamera() {
     if (rawLocalRef.current?.getVideoTracks()[0]?.readyState === "live") {
+      linfo("ensureCamera: existing live track, reusing");
       return;
     }
+    linfo("ensureCamera: requesting getUserMedia(video+audio)");
     const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    linfo("ensureCamera: got stream", describeStream(stream));
+    // Update ref synchronously so getOrCreatePc can use it immediately,
+    // before React schedules the re-render from setRawLocal.
+    rawLocalRef.current = stream;
     setRawLocal(stream);
   }
 
   function attachRoomSocket(id: string) {
+    linfo("attachRoomSocket", { roomId: id });
     closeAllPeers();
     setParticipants({});
     setRemoteStreams({});
@@ -375,6 +456,7 @@ export function GroupCallPanel({ me }: { me: UserResponse }) {
     wsRef.current = ws;
 
     ws.onopen = () => {
+      linfo("room WS open", { roomId: id });
       setJoined(true);
       setStatus("Connected — linking peers…");
       pushToast("You are in the call", "success");
@@ -512,6 +594,19 @@ export function GroupCallPanel({ me }: { me: UserResponse }) {
       callId,
     });
     pushToast("Ringing…", "info");
+
+    // Auto-join the caller's own room so their camera is live and they can
+    // receive the callee's stream as soon as the invite is accepted.
+    if (!joined) {
+      setStatus("Starting camera…");
+      try {
+        await ensureCamera();
+      } catch {
+        pushToast("Camera or microphone permission denied.", "error");
+        return;
+      }
+      attachRoomSocket(id);
+    }
   }
 
   function createNewRoom() {
@@ -637,7 +732,25 @@ export function GroupCallPanel({ me }: { me: UserResponse }) {
         </header>
 
         {status ? <div className="status-pill">{status}</div> : null}
-        {effectError ? <p className="error">{effectError}</p> : null}
+        {effectError ? (
+          <div
+            role="alert"
+            style={{
+              padding: "0.75rem 1rem",
+              margin: "0.5rem 0",
+              background: "#fee2e2",
+              border: "1px solid #fca5a5",
+              borderRadius: "0.5rem",
+              color: "#991b1b",
+            }}
+          >
+            <strong>Camera effect unavailable:</strong> {effectError}
+            <br />
+            <span style={{ fontSize: "0.85rem" }}>
+              Showing raw camera. Check the browser console (filter <code>[letsgo:effects]</code>) for details.
+            </span>
+          </div>
+        ) : null}
 
         <div className="video-grid group-grid meeting-grid">
           <div className="video-tile meeting-peer-tile local-highlight">

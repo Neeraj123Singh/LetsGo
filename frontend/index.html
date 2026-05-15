@@ -7,6 +7,20 @@
   </head>
   <body>
     <div id="root"></div>
+    <!--
+      MediaPipe Selfie Segmentation is built with Google Closure Library and
+      only attaches its `SelfieSegmentation` class to `window`/`globalThis`.
+      Bundlers (Vite, esbuild) lose this assignment when they wrap the script
+      as an ESM module, resulting in `X.SelfieSegmentation is not a constructor`.
+      Loading it as a blocking <script> here guarantees `window.SelfieSegmentation`
+      is set before our React module bundle runs. The `src/video/mediapipe-shim.ts`
+      file then re-exports the global so `@tensorflow-models/body-segmentation`
+      sees a populated module via the Vite alias defined in `vite.config.ts`.
+    -->
+    <script
+      src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation@0.1.1675465747/selfie_segmentation.js"
+      crossorigin="anonymous"
+    ></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -15,7 +15,7 @@ From the repo root:
 docker compose up --build
 ```
 
-Open **http://localhost:3000**. Nginx routes:
+Open **http://localhost:${FRONTEND_HOST_PORT:-3000}** (if port 3000 is in use: `FRONTEND_HOST_PORT=3001 docker compose up --build`). Nginx routes:
 
 - `/api/*` → **auth-java** (8080)
 - `/meeting/*` → **meeting-go** (8081), including WebSocket upgrades for `/meeting/ws/`
