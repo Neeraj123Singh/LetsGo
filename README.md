@@ -44,6 +44,10 @@ docker compose up --build
 3. **meeting-go**: `cd services/meeting-go && GOSUMDB=off go run .` with `DATABASE_URL` and the same `LETSGO_JWT_SECRET`.
 4. **frontend**: `cd frontend && npm install && npm run dev` — Vite proxies `/api` → 8080 and `/meeting` → 8081.
 
+## Deploy for free
+
+To host the whole stack on a single Oracle Cloud Always Free VM (Caddy + coturn + your existing compose), follow **[`docs/platform/free-tier-deployment.md`](docs/platform/free-tier-deployment.md)**.
+
 ## Roadmap
 
 - Google OAuth sign-in

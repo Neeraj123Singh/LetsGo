@@ -1,0 +1,29 @@
+# Copy to terraform.tfvars and fill in. terraform.tfvars is gitignored.
+# Run `oci setup config` once on your laptop before applying so this module
+# can read ~/.oci/config.
+
+# Find these in the OCI console:
+#   Profile menu → Tenancy: copy the OCID
+#   Profile menu → Compartment: copy the OCID (root tenancy is fine)
+#   Top-right region selector → "Manage regions": copy the identifier
+tenancy_ocid     = "ocid1.tenancy.oc1..xxxxxxx"
+compartment_ocid = "ocid1.tenancy.oc1..xxxxxxx"   # root OK; or a child compartment OCID
+region           = "ap-mumbai-1"                  # change to your home region
+
+# OCI CLI profile to authenticate as. "DEFAULT" matches `oci setup config`.
+oci_profile = "DEFAULT"
+
+# Public half of the SSH key you'll use to log into the VM.
+ssh_public_key_path = "~/.ssh/id_ed25519.pub"
+
+# OPTIONAL — restrict SSH to your home IP for safety:
+# ssh_ingress_cidr = "203.0.113.42/32"
+
+# Where the cloud-init script should clone the app from on first boot.
+git_repo_url    = "https://github.com/your-user/letsgo.git"
+git_repo_branch = "main"
+
+# Adjust if you want to leave headroom for other Always-Free instances.
+# Total Always-Free A1 budget across your tenancy: 4 OCPUs / 24 GB.
+# instance_ocpus     = 4
+# instance_memory_gb = 24

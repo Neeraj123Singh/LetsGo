@@ -2,6 +2,8 @@
 
 For what is **already runnable locally** (Docker Compose: Postgres, auth-java, meeting-go, React/nginx), see **`docs/changes/2026-05-04.md`** and **`README.md`** at the repo root. The phases below are the **target** AWS/Kubernetes rollout.
 
+> For a **$0/month single-VM deployment** that ships today (Oracle Cloud Always Free + Caddy + coturn), see **[`free-tier-deployment.md`](./free-tier-deployment.md)**. The application code, container images, and env-var contracts are the same; only the runtime substrate differs.
+
 ## Phase 1: Foundation
 
 - Provision VPC, subnets, routing, NAT, and security groups with Terraform.

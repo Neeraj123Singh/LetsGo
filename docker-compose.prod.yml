@@ -1,0 +1,149 @@
+# Production stack for a single VM (e.g. Oracle Cloud Always Free).
+#
+# All inbound traffic enters via Caddy (80/443) and coturn (3478 + relay range).
+# Backend services and Postgres are NOT published to the host — they speak only
+# over the internal `letsgo_internal` Docker network. Caddy provides automatic
+# HTTPS via Let's Encrypt for the domain in $DOMAIN.
+#
+# Usage on the VM:
+#     cp .env.prod.example .env.prod
+#     # ...fill in DOMAIN, LETSGO_JWT_SECRET, TURN_* etc...
+#     docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: letsgo
+      POSTGRES_USER: letsgo
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.prod}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U letsgo -d letsgo"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+    networks: [letsgo_internal]
+
+  migrate:
+    image: migrate/migrate:v4.17.1
+    command:
+      - "-path"
+      - "/migrations"
+      - "-database"
+      - "postgres://letsgo:${POSTGRES_PASSWORD}@postgres:5432/letsgo?sslmode=disable"
+      - "up"
+    volumes:
+      - ./migrations/go:/migrations
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    networks: [letsgo_internal]
+
+  auth-java:
+    build:
+      context: ./services/auth-java
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/letsgo
+      SPRING_DATASOURCE_USERNAME: letsgo
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      LETSGO_JWT_SECRET: ${LETSGO_JWT_SECRET:?set LETSGO_JWT_SECRET in .env.prod}
+      LETSGO_CORS_ALLOWED_ORIGINS: "https://${DOMAIN:?set DOMAIN in .env.prod}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    networks: [letsgo_internal]
+
+  meeting-go:
+    build:
+      context: ./services/meeting-go
+    environment:
+      DATABASE_URL: "postgres://letsgo:${POSTGRES_PASSWORD}@postgres:5432/letsgo?sslmode=disable"
+      LETSGO_JWT_SECRET: ${LETSGO_JWT_SECRET}
+      CORS_ALLOWED_ORIGINS: "https://${DOMAIN}"
+      PORT: "8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    networks: [letsgo_internal]
+
+  frontend:
+    build:
+      context: ./frontend
+      # TURN credentials baked into the production bundle so the SPA can hand
+      # them to the WebRTC PeerConnection. Re-build the image (or pass --no-cache)
+      # whenever you rotate the TURN password.
+      args:
+        VITE_TURN_URL: "turn:${DOMAIN}:3478?transport=udp"
+        VITE_TURN_USER: ${TURN_USER:?set TURN_USER in .env.prod}
+        VITE_TURN_PASS: ${TURN_PASS:?set TURN_PASS in .env.prod}
+    depends_on:
+      - auth-java
+      - meeting-go
+    restart: unless-stopped
+    networks: [letsgo_internal]
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+      - auth-java
+      - meeting-go
+    restart: unless-stopped
+    networks: [letsgo_internal]
+
+  # TURN/STUN relay for WebRTC. Uses host networking because coturn needs a
+  # wide UDP port range for relay candidates and Docker's userland UDP proxy
+  # is unreliable beyond ~100 ports.
+  coturn:
+    image: coturn/coturn:4.6
+    network_mode: host
+    volumes:
+      - ./coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+    environment:
+      TURN_USER: ${TURN_USER}
+      TURN_PASS: ${TURN_PASS}
+      TURN_REALM: ${DOMAIN}
+      TURN_EXTERNAL_IP: ${TURN_EXTERNAL_IP:?set TURN_EXTERNAL_IP to the VM's public IPv4}
+    command:
+      - "--log-file=stdout"
+      - "--realm=${DOMAIN}"
+      - "--external-ip=${TURN_EXTERNAL_IP}"
+      - "--listening-port=3478"
+      - "--min-port=49160"
+      - "--max-port=49200"
+      - "--lt-cred-mech"
+      - "--user=${TURN_USER}:${TURN_PASS}"
+      - "--no-cli"
+      - "--no-tlsv1"
+      - "--no-tlsv1_1"
+      - "--fingerprint"
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  letsgo_internal:
+    driver: bridge

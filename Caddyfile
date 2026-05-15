@@ -1,0 +1,48 @@
+# Production reverse proxy for the letsgo stack.
+# Caddy issues a free Let's Encrypt certificate automatically for $DOMAIN and
+# routes traffic to the right service based on path. WebSocket upgrades are
+# handled transparently by `reverse_proxy` since Caddy v2.
+#
+# Required env (provided by docker-compose.prod.yml): DOMAIN
+
+{
+	# Global options. Provide an email so Let's Encrypt can notify on cert
+	# expiry; falls back to an internal CA if the email is missing.
+	email {$ACME_EMAIL:admin@example.com}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# Sensible browser headers — keep HSTS off until you're sure your DNS
+	# and cert renewal are stable. Uncomment after the first successful
+	# renewal cycle (≥60 days).
+	header {
+		# Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(self), microphone=(self), display-capture=(self)"
+		-Server
+	}
+
+	# Spring Boot auth API.
+	handle /api/* {
+		reverse_proxy auth-java:8080
+	}
+
+	# Go meeting service — both HTTP (user lookup) and WebSocket signaling.
+	# Caddy detects the Upgrade header and proxies the WS connection.
+	handle /meeting/* {
+		reverse_proxy meeting-go:8081
+	}
+
+	# React SPA + nginx static fallback.
+	handle {
+		reverse_proxy frontend:80
+	}
+
+	# Friendlier error responses than the default Caddy page.
+	handle_errors {
+		respond "{err.status_code} {err.status_text}"
+	}
+}

@@ -1,0 +1,74 @@
+#cloud-config
+# First-boot bootstrap for the letsgo AWS EC2 VM.
+#
+# This file is templated by Terraform — variables in $${...} are substituted at
+# `terraform apply` time and the result is passed as the instance user_data.
+# Cloud-init parses it on first boot and executes everything below as root.
+#
+# After this runs, the VM has Docker, optional swap (helpful on 1 GB free-tier
+# instances), and the app source. AWS handles inbound filtering at the
+# security group level, so no host iptables rules are needed.
+#
+# All app-level setup (secrets, domain, deploy) happens via `make remote-setup`
+# over SSH so secrets never touch instance metadata.
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - ca-certificates
+  - curl
+  - gnupg
+  - git
+  - jq
+  - make
+
+write_files:
+  - path: /etc/profile.d/letsgo.sh
+    permissions: "0644"
+    content: |
+      # cd straight into the repo on login for convenience.
+      if [ -d /home/ubuntu/letsgo ] && [ "$PWD" = "/home/ubuntu" ]; then
+        cd /home/ubuntu/letsgo
+      fi
+
+runcmd:
+  # --- Swap (helps on 1 GB t3.micro / t2.micro instances) -------------------
+  - |
+    SWAP_GB=${swap_size_gb}
+    if [ "$SWAP_GB" -gt 0 ] && [ ! -f /swapfile ]; then
+      fallocate -l "$${SWAP_GB}G" /swapfile
+      chmod 600 /swapfile
+      mkswap /swapfile
+      swapon /swapfile
+      echo '/swapfile none swap sw 0 0' >> /etc/fstab
+      echo 'vm.swappiness=20' > /etc/sysctl.d/99-letsgo-swap.conf
+      sysctl --system >/dev/null
+    fi
+
+  # --- Docker Engine + Compose plugin ----------------------------------------
+  - install -m 0755 -d /etc/apt/keyrings
+  - >-
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg |
+    gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+  - chmod a+r /etc/apt/keyrings/docker.gpg
+  - >-
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg]
+    https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+    | tee /etc/apt/sources.list.d/docker.list > /dev/null
+  - apt-get update
+  - >-
+    apt-get install -y
+    docker-ce docker-ce-cli containerd.io
+    docker-buildx-plugin docker-compose-plugin
+  - usermod -aG docker ubuntu
+
+  # --- Source ----------------------------------------------------------------
+  - >-
+    sudo -u ubuntu -H git clone --branch ${git_repo_branch}
+    ${git_repo_url} /home/ubuntu/letsgo
+
+  # --- Sentinel file so callers can detect "ready" ----------------------------
+  - touch /var/lib/cloud/instance/letsgo-bootstrap-complete
+
+final_message: "letsgo bootstrap finished after $UPTIME seconds"
