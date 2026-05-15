@@ -1,6 +1,8 @@
 package com.letsgo.auth.web;
 
+import com.letsgo.auth.exception.BadRequestException;
 import com.letsgo.auth.exception.ConflictException;
+import com.letsgo.auth.exception.NotFoundException;
 import com.letsgo.auth.exception.UnauthorizedException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -26,6 +28,20 @@ public class ApiExceptionHandler {
     public ProblemDetail handleUnauthorized(UnauthorizedException ex) {
         ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, ex.getMessage());
         pd.setTitle("Unauthorized");
+        return pd;
+    }
+
+    @ExceptionHandler(NotFoundException.class)
+    public ProblemDetail handleNotFound(NotFoundException ex) {
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+        pd.setTitle("Not Found");
+        return pd;
+    }
+
+    @ExceptionHandler(BadRequestException.class)
+    public ProblemDetail handleBadRequest(BadRequestException ex) {
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
+        pd.setTitle("Bad Request");
         return pd;
     }
 

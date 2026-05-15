@@ -6,6 +6,8 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.lang.NonNull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -20,6 +22,8 @@ import java.util.UUID;
 
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
+
+    private static final Logger log = LoggerFactory.getLogger(JwtAuthenticationFilter.class);
 
     private final JwtService jwtService;
     private final UserRepository userRepository;
@@ -55,8 +59,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                         List.of(new SimpleGrantedAuthority("ROLE_USER"))
                 );
                 SecurityContextHolder.getContext().setAuthentication(auth);
+            } else {
+                log.warn("JWT parsed but user {} not found in DB for {} {} — returning 403",
+                        userId, request.getMethod(), request.getRequestURI());
+                SecurityContextHolder.clearContext();
             }
-        } catch (Exception ignored) {
+        } catch (Exception ex) {
+            log.warn("JWT validation failed for {} {}: {}",
+                    request.getMethod(), request.getRequestURI(), ex.getMessage());
             SecurityContextHolder.clearContext();
         }
         filterChain.doFilter(request, response);

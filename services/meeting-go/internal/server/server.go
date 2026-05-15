@@ -47,7 +47,7 @@ func (s *Server) cors(next http.Handler) http.Handler {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Access-Control-Allow-Credentials", "true")
 			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		}
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
@@ -55,6 +55,24 @@ func (s *Server) cors(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func (s *Server) authed(r *http.Request) (string, bool) {
+	tok := bearerToken(r)
+	if tok == "" {
+		return "", false
+	}
+	uid, err := auth.ParseUserID(tok, s.Secret)
+	if err != nil {
+		return "", false
+	}
+	return uid, true
+}
+
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
 }
 
 func bearerToken(r *http.Request) string {
@@ -199,12 +217,12 @@ func (s *Server) RoomWS(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			out := map[string]any{
-				"kind":         kind,
-				"roomId":       roomID,
-				"fromUserId":   row.ID,
-				"fromEmail":    row.Email,
+				"kind":            kind,
+				"roomId":          roomID,
+				"fromUserId":      row.ID,
+				"fromEmail":       row.Email,
 				"fromDisplayName": row.DisplayName,
-				"targetUserId": target,
+				"targetUserId":    target,
 			}
 			if sdp, ok := msg["sdp"].(string); ok {
 				out["sdp"] = sdp
@@ -220,6 +238,38 @@ func (s *Server) RoomWS(w http.ResponseWriter, r *http.Request) {
 			}
 			b, _ := json.Marshal(out)
 			s.Hub.SendToUser(roomID, target, b)
+		case "chat-room":
+			body, _ := msg["body"].(string)
+			body = strings.TrimSpace(body)
+			if body == "" || len(body) > 4000 {
+				continue
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			saved, err := store.InsertRoomMessage(ctx, s.Pool, roomID, row.ID, body)
+			cancel()
+			if err != nil {
+				log.Printf("room msg insert: %v", err)
+				continue
+			}
+			out := hub.JSON("chat-room", map[string]any{
+				"id":              saved.ID,
+				"roomId":          saved.RoomID,
+				"senderId":        saved.SenderID,
+				"fromDisplayName": row.DisplayName,
+				"fromEmail":       row.Email,
+				"body":            saved.Body,
+				"createdAt":       saved.CreatedAt,
+			})
+			// Broadcast to everyone in the room (sender included so all clients agree on history).
+			s.Hub.BroadcastExcept(roomID, "", out)
+		case "chat-typing":
+			// lightweight presence; don't persist
+			out := hub.JSON("chat-typing", map[string]any{
+				"roomId":          roomID,
+				"fromUserId":      row.ID,
+				"fromDisplayName": row.DisplayName,
+			})
+			s.Hub.BroadcastExcept(roomID, row.ID, out)
 		default:
 			// ignore unknown
 		}
@@ -276,6 +326,10 @@ func (s *Server) NotifyWS(w http.ResponseWriter, r *http.Request) {
 			targetEmail, _ := msg["targetEmail"].(string)
 			roomID, _ := msg["roomId"].(string)
 			callID, _ := msg["callId"].(string)
+			mode, _ := msg["mode"].(string)
+			if mode != "audio" {
+				mode = "video"
+			}
 			targetEmail = strings.TrimSpace(strings.ToLower(targetEmail))
 			if targetEmail == "" || !validRoomID(roomID) || len(callID) < 8 {
 				s.Hub.SendNotifyToUser(row.ID, hub.JSON("invite-error", map[string]any{
@@ -304,9 +358,17 @@ func (s *Server) NotifyWS(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			s.Hub.RememberInvite(callID, row.ID)
+			// Best-effort: stamp the recent-interactions surface so both sides see the call.
+			go func(me, peer string) {
+				bg, c := context.WithTimeout(context.Background(), 5*time.Second)
+				defer c()
+				_ = store.TouchRecentInteraction(bg, s.Pool, me, peer, "call")
+				_ = store.TouchRecentInteraction(bg, s.Pool, peer, me, "call")
+			}(row.ID, target.ID)
 			s.Hub.SendNotifyToUser(target.ID, hub.JSON("incoming-call", map[string]any{
 				"callId":          callID,
 				"roomId":          roomID,
+				"mode":            mode,
 				"fromUserId":      row.ID,
 				"fromEmail":       row.Email,
 				"fromDisplayName": row.DisplayName,
@@ -343,6 +405,11 @@ func (s *Server) NotifyWS(w http.ResponseWriter, r *http.Request) {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /meeting/api/v1/users/lookup", s.LookupHandler)
+	mux.HandleFunc("GET /meeting/api/v1/messages/dm", s.DmHistoryHandler)
+	mux.HandleFunc("POST /meeting/api/v1/messages/dm", s.DmSendHandler)
+	mux.HandleFunc("GET /meeting/api/v1/messages/room", s.RoomChatHistoryHandler)
+	mux.HandleFunc("GET /meeting/api/v1/recent", s.RecentHandler)
+	mux.HandleFunc("POST /meeting/api/v1/recent/touch", s.MarkCallHandler)
 	mux.HandleFunc("GET /meeting/ws/v1/room", s.RoomWS)
 	mux.HandleFunc("GET /meeting/ws/v1/notify", s.NotifyWS)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
