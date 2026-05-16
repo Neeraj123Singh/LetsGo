@@ -1,3 +1,8 @@
+html {
+  height: 100%;
+  -webkit-text-size-adjust: 100%;
+}
+
 :root {
   color-scheme: light dark;
   font-family:
@@ -24,6 +29,7 @@
 body {
   margin: 0;
   min-height: 100vh;
+  min-height: 100dvh;
   background: radial-gradient(1200px 600px at 20% -10%, #1f3a5f 0%, var(--bg) 55%);
   color: var(--text);
 }
@@ -38,10 +44,15 @@ a:hover {
 
 .page {
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 1.5rem;
+  padding-left: max(1.5rem, env(safe-area-inset-left, 0px));
+  padding-right: max(1.5rem, env(safe-area-inset-right, 0px));
+  padding-bottom: max(1.5rem, env(safe-area-inset-bottom, 0px));
+  padding-top: max(1.5rem, env(safe-area-inset-top, 0px));
 }
 
 .card {
@@ -474,8 +485,8 @@ button.secondary {
 /* Toasts */
 .toast-stack {
   position: fixed;
-  top: 1rem;
-  right: 1rem;
+  top: max(1rem, env(safe-area-inset-top, 0px));
+  right: max(1rem, env(safe-area-inset-right, 0px));
   z-index: 2000;
   display: flex;
   flex-direction: column;
@@ -652,7 +663,10 @@ button.secondary {
 
 @media (max-width: 768px) {
   .app-shell {
-    grid-template-columns: 64px 1fr;
+    grid-template-columns: 56px 1fr;
+    min-height: 100vh;
+    min-height: 100dvh;
+    min-height: -webkit-fill-available;
   }
   .app-sidebar .brand-name,
   .app-sidebar .me-text,
@@ -661,6 +675,17 @@ button.secondary {
   }
   .app-sidebar .nav-link {
     justify-content: center;
+  }
+  .app-sidebar {
+    padding-left: max(0.65rem, env(safe-area-inset-left, 0px));
+    padding-right: max(0.45rem, env(safe-area-inset-right, 0px));
+    height: 100vh;
+    height: 100dvh;
+    height: -webkit-fill-available;
+  }
+  .app-main {
+    padding: 1rem max(1rem, env(safe-area-inset-right, 0px)) max(2rem, env(safe-area-inset-bottom, 0px))
+      max(0.85rem, env(safe-area-inset-left, 0px));
   }
 }
 
@@ -1038,7 +1063,10 @@ button.secondary {
 .chat-page {
   display: grid;
   grid-template-rows: auto 1fr auto;
-  height: calc(100vh - 2.5rem);
+  height: calc(
+    100dvh - 2.5rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)
+  );
+  min-height: 0;
   gap: 0.75rem;
 }
 
@@ -1244,6 +1272,15 @@ button.secondary {
   aspect-ratio: 16 / 10;
 }
 
+@media (max-width: 720px) {
+  .meeting-shell.is-sharing .meeting-stage {
+    grid-template-columns: 1fr;
+  }
+  .meeting-shell.is-sharing .meeting-grid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  }
+}
+
 .screen-share-stage {
   aspect-ratio: 16 / 9;
   background: #05080d;
@@ -1273,8 +1310,10 @@ button.secondary {
   max-width: none;
   width: 100vw;
   height: 100vh;
+  height: 100dvh;
   margin: 0;
-  padding: 1rem 1.25rem;
+  padding: max(1rem, env(safe-area-inset-top, 0px)) max(1.25rem, env(safe-area-inset-right, 0px))
+    max(1rem, env(safe-area-inset-bottom, 0px)) max(1.25rem, env(safe-area-inset-left, 0px));
   background: #05080d;
   display: flex;
   flex-direction: column;
@@ -1420,3 +1459,40 @@ button.secondary {
   padding-top: 0.85rem;
 }
 
+/* ─── Narrow phones & safe tap targets ──────────────────────────────────── */
+@media (max-width: 420px) {
+  .carousel {
+    grid-auto-columns: minmax(min(260px, 88vw), 1fr);
+  }
+
+  .requests-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .contact-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .page-title {
+    font-size: 1.35rem;
+  }
+
+  .bubble {
+    max-width: min(92%, 36rem);
+  }
+
+  .home-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+@media (max-width: 380px) {
+  .card {
+    padding: 1.35rem;
+  }
+
+  input {
+    font-size: 16px;
+  }
+}

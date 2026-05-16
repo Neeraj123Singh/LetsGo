@@ -23,7 +23,7 @@ Contacts, **1:1 chat**, **audio/video calls** (mesh WebRTC), **in-meeting chat &
 
 | Layer | Technology | Responsibility |
 |-------|------------|----------------|
-| **UI** | React (Vite), TypeScript | SPA: auth, contacts, chats, `/call/:roomId`, meeting room, notify modals |
+| **UI** | React (Vite), TypeScript | SPA + **installable PWA** (Web App Manifest + Workbox); auth, contacts, chats, `/call/:roomId`, meeting room, notify modals |
 | **Auth API** | Spring Boot 3, JPA | Register/login, JWT, users, **connections**, **saved virtual backgrounds** |
 | **Realtime** | Go (`meeting-go`) | JWT on all entry points; **room** WebSocket (mesh SDP/ICE relay); **notify** WebSocket (invites + DM push); HTTP for DM/room history, recents |
 | **DB** | PostgreSQL 16 | Single source of truth; **`migrations/go/`** applied by `migrate` container before apps start |
