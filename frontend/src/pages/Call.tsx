@@ -6,6 +6,8 @@ export function Call() {
   const [params] = useSearchParams();
   const mode = (params.get("mode") === "audio" ? "audio" : "video") as "audio" | "video";
   const autoRingPeerId = params.get("peer") ?? undefined;
+  /** Pass-through from Contacts / Home — avoids flaky contacts-ID matching vs URL. */
+  const autoRingPeerEmail = params.get("peerEmail") ?? undefined;
   const autoJoin = params.get("auto") === "1";
   const nav = useNavigate();
 
@@ -27,6 +29,7 @@ export function Call() {
         roomId={roomId}
         mode={mode}
         autoRingPeerId={autoRingPeerId}
+        autoRingPeerEmail={autoRingPeerEmail}
         autoJoin={autoJoin}
         onLeave={() => nav("/")}
       />

@@ -52,9 +52,17 @@ export function Home() {
     }));
   }, [recents, contacts]);
 
-  function startCall(peerId: string, mode: "video" | "audio") {
+  function buildCallUrl(roomId: string, peerId: string, peerEmail: string | undefined, mode: "video" | "audio") {
+    let q = `mode=${encodeURIComponent(mode)}&peer=${encodeURIComponent(peerId)}`;
+    if (peerEmail?.trim()) {
+      q += `&peerEmail=${encodeURIComponent(peerEmail.trim().toLowerCase())}`;
+    }
+    return `/call/${encodeURIComponent(roomId)}?${q}`;
+  }
+
+  function startCall(peerId: string, mode: "video" | "audio", peerEmail?: string) {
     const roomId = crypto.randomUUID();
-    nav(`/call/${encodeURIComponent(roomId)}?mode=${mode}&peer=${peerId}`);
+    nav(buildCallUrl(roomId, peerId, peerEmail, mode));
   }
 
   function openChat(peerId: string) {
@@ -107,8 +115,8 @@ export function Home() {
                 </div>
                 <div className="cc-actions">
                   <button type="button" className="btn-icon" title="Chat" onClick={() => openChat(r.userId)}>✎</button>
-                  <button type="button" className="btn-icon" title="Audio call" onClick={() => startCall(r.userId, "audio")}>☎</button>
-                  <button type="button" className="btn-icon" title="Video call" onClick={() => startCall(r.userId, "video")}>▶</button>
+                  <button type="button" className="btn-icon" title="Audio call" onClick={() => startCall(r.userId, "audio", r.email)}>☎</button>
+                  <button type="button" className="btn-icon" title="Video call" onClick={() => startCall(r.userId, "video", r.email)}>▶</button>
                 </div>
               </article>
             ))}
@@ -134,8 +142,8 @@ export function Home() {
                 </div>
                 <div className="cc-actions">
                   <button type="button" className="btn-icon" title="Chat" onClick={() => openChat(c.user.id)}>✎</button>
-                  <button type="button" className="btn-icon" title="Audio" onClick={() => startCall(c.user.id, "audio")}>☎</button>
-                  <button type="button" className="btn-icon" title="Video" onClick={() => startCall(c.user.id, "video")}>▶</button>
+                  <button type="button" className="btn-icon" title="Audio" onClick={() => startCall(c.user.id, "audio", c.user.email)}>☎</button>
+                  <button type="button" className="btn-icon" title="Video" onClick={() => startCall(c.user.id, "video", c.user.email)}>▶</button>
                 </div>
               </article>
             ))}

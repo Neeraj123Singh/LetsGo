@@ -12,6 +12,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { meetingNotifyWebSocketUrl } from "../meeting/ws";
 import type { DirectMessage } from "../api/messages";
+import { useCallRing } from "../audio/useCallRing";
 
 export type IncomingCall = {
   callId: string;
@@ -48,7 +49,25 @@ export function NotifyProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const wsRef = useRef<WebSocket | null>(null);
+  /** Invites accepted/declined are time-sensitive — keep at most ~20 pending bursts. */
+  const pendingOutboundRef = useRef<unknown[]>([]);
   const [ready, setReady] = useState(false);
+  const ring = useCallRing();
+
+  const flushPendingOutbound = useCallback(() => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    const batch = pendingOutboundRef.current;
+    pendingOutboundRef.current = [];
+    for (const payload of batch) {
+      try {
+        ws.send(JSON.stringify(payload));
+      } catch {
+        pendingOutboundRef.current.push(payload);
+        break;
+      }
+    }
+  }, []);
 
   const [toasts, setToasts] = useState<Toast[]>([]);
   const toastSeq = useRef(0);
@@ -63,6 +82,16 @@ export function NotifyProvider({ children }: { children: ReactNode }) {
   const [incoming, setIncoming] = useState<IncomingCall | null>(null);
   const [outboundCallId, setOutboundCallId] = useState<string | null>(null);
 
+  // Ring as long as a call modal is showing; stop the moment it goes away.
+  useEffect(() => {
+    if (incoming) {
+      ring.start();
+      return () => ring.stop();
+    }
+    ring.stop();
+    return undefined;
+  }, [incoming, ring]);
+
   const dmListenersRef = useRef<Set<DmListener>>(new Set());
   const subscribeDM = useCallback((fn: DmListener) => {
     dmListenersRef.current.add(fn);
@@ -71,17 +100,25 @@ export function NotifyProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const send = useCallback((payload: unknown) => {
-    const ws = wsRef.current;
-    if (ws?.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify(payload));
-    }
-  }, []);
+  const send = useCallback(
+    (payload: unknown) => {
+      const ws = wsRef.current;
+      if (ws?.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify(payload));
+        return;
+      }
+      if (pendingOutboundRef.current.length < 40) {
+        pendingOutboundRef.current.push(payload);
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     if (!user) {
       wsRef.current?.close();
       wsRef.current = null;
+      pendingOutboundRef.current = [];
       setReady(false);
       return;
     }
@@ -102,6 +139,7 @@ export function NotifyProvider({ children }: { children: ReactNode }) {
       ws.onopen = () => {
         setReady(true);
         retry = 0;
+        flushPendingOutbound();
       };
 
       ws.onmessage = (ev) => {
@@ -150,6 +188,7 @@ export function NotifyProvider({ children }: { children: ReactNode }) {
           dmListenersRef.current.forEach((fn) => fn(dm));
           if (user && dm.senderId !== user.id) {
             pushToast(`New message`, "info");
+            ring.ping();
           }
           return;
         }
@@ -174,8 +213,9 @@ export function NotifyProvider({ children }: { children: ReactNode }) {
       cancelled = true;
       wsRef.current?.close();
       wsRef.current = null;
+      pendingOutboundRef.current = [];
     };
-  }, [user, pushToast]);
+  }, [user, pushToast, ring, flushPendingOutbound]);
 
   const acceptIncoming = useCallback(() => {
     if (!incoming) return;

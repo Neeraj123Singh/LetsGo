@@ -46,9 +46,16 @@ export function Contacts() {
     void reload();
   }, [reload]);
 
-  function startCall(peerId: string, mode: "video" | "audio") {
+  function buildCallUrl(roomId: string, peerId: string, peerEmail: string, mode: "video" | "audio") {
+    const q =
+      `mode=${encodeURIComponent(mode)}&peer=${encodeURIComponent(peerId)}` +
+      `&peerEmail=${encodeURIComponent(peerEmail.trim().toLowerCase())}`;
+    return `/call/${encodeURIComponent(roomId)}?${q}`;
+  }
+
+  function startCall(peerId: string, peerEmail: string, mode: "video" | "audio") {
     const roomId = crypto.randomUUID();
-    nav(`/call/${encodeURIComponent(roomId)}?mode=${mode}&peer=${peerId}`);
+    nav(buildCallUrl(roomId, peerId, peerEmail, mode));
   }
 
   return (
@@ -100,7 +107,7 @@ export function Contacts() {
               pushToast(e instanceof Error ? e.message : "Remove failed", "error");
             }
           }}
-          onCall={(id, m) => startCall(id, m)}
+          onCall={(id, email, m) => startCall(id, email, m)}
           onChat={(id) => nav(`/chats/${id}`)}
         />
       ) : null}
@@ -150,7 +157,7 @@ function ContactList({
   loading: boolean;
   contacts: ContactView[];
   onRemove: (id: string) => Promise<void>;
-  onCall: (id: string, mode: "audio" | "video") => void;
+  onCall: (id: string, email: string, mode: "audio" | "video") => void;
   onChat: (id: string) => void;
 }) {
   if (loading) return <p className="muted">Loading…</p>;
@@ -172,8 +179,8 @@ function ContactList({
           </div>
           <div className="cc-actions">
             <button type="button" className="btn-icon" title="Chat" onClick={() => onChat(c.user.id)}>✎</button>
-            <button type="button" className="btn-icon" title="Audio call" onClick={() => onCall(c.user.id, "audio")}>☎</button>
-            <button type="button" className="btn-icon" title="Video call" onClick={() => onCall(c.user.id, "video")}>▶</button>
+            <button type="button" className="btn-icon" title="Audio call" onClick={() => onCall(c.user.id, c.user.email, "audio")}>☎</button>
+            <button type="button" className="btn-icon" title="Video call" onClick={() => onCall(c.user.id, c.user.email, "video")}>▶</button>
             <button type="button" className="btn-icon danger" title="Remove" onClick={() => void onRemove(c.user.id)}>✕</button>
           </div>
         </li>

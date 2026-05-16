@@ -35,7 +35,8 @@ export function ChatThread() {
       fetchDirectMessages(peerId).catch(() => [] as DirectMessage[]),
     ]).then(([contacts, msgs]) => {
       if (cancelled) return;
-      const p = contacts.find((c) => c.user.id === peerId);
+      const norm = peerId.trim().toLowerCase();
+      const p = contacts.find((c) => c.user.id.trim().toLowerCase() === norm);
       setPeer(p ? p.user : null);
       // store oldest → newest for rendering
       setMessages([...msgs].reverse());
@@ -86,7 +87,12 @@ export function ChatThread() {
   function startCall(mode: "audio" | "video") {
     if (!peerId) return;
     const roomId = crypto.randomUUID();
-    nav(`/call/${encodeURIComponent(roomId)}?mode=${mode}&peer=${peerId}`);
+    const pid = encodeURIComponent(peerId);
+    let q = `mode=${encodeURIComponent(mode)}&peer=${pid}`;
+    if (peer?.email?.trim()) {
+      q += `&peerEmail=${encodeURIComponent(peer.email.trim().toLowerCase())}`;
+    }
+    nav(`/call/${encodeURIComponent(roomId)}?${q}`);
   }
 
   const groups = useMemo(() => {

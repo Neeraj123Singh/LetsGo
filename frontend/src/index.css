@@ -1219,3 +1219,204 @@ button.secondary {
 
 .center { text-align: center; }
 
+/* ─── In-meeting layout extensions ──────────────────────────────────────── */
+
+/* Wrapper that holds the optional screen-share stage above the participant grid. */
+.meeting-stage {
+  display: grid;
+  gap: 0.85rem;
+  margin-bottom: 1.35rem;
+}
+
+/* When screen-sharing, the share takes 4/5 of the width and the participant
+   grid collapses into a vertical strip on the right with smaller tiles. */
+.meeting-shell.is-sharing .meeting-stage {
+  grid-template-columns: minmax(0, 4fr) minmax(220px, 1fr);
+  align-items: start;
+}
+
+.meeting-shell.is-sharing .meeting-grid {
+  grid-template-columns: 1fr;
+  margin-bottom: 0;
+}
+
+.meeting-shell.is-sharing .meeting-grid .meeting-peer-tile {
+  aspect-ratio: 16 / 10;
+}
+
+.screen-share-stage {
+  aspect-ratio: 16 / 9;
+  background: #05080d;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  position: relative;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+
+.screen-share-stage .video-fit {
+  object-fit: contain;
+  background: #05080d;
+}
+
+/* Used to keep the local <video> mounted (so srcObject stays bound) but visually
+   hidden when the camera is toggled off. */
+.video-fit.is-hidden {
+  visibility: hidden;
+  position: absolute;
+  inset: 0;
+}
+
+/* ─── Fullscreen mode ───────────────────────────────────────────────────── */
+.meeting-shell.is-fullscreen,
+.meeting-shell:fullscreen {
+  max-width: none;
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  padding: 1rem 1.25rem;
+  background: #05080d;
+  display: flex;
+  flex-direction: column;
+}
+
+.meeting-shell:fullscreen .meeting-card,
+.meeting-shell.is-fullscreen .meeting-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  max-width: none;
+  width: 100%;
+  border-radius: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0.5rem 0 0;
+}
+
+.meeting-shell:fullscreen .meeting-stage,
+.meeting-shell.is-fullscreen .meeting-stage {
+  flex: 1;
+  min-height: 0;
+}
+
+.meeting-shell:fullscreen .meeting-grid,
+.meeting-shell.is-fullscreen .meeting-grid {
+  height: 100%;
+}
+
+.meeting-shell:fullscreen .meeting-peer-tile,
+.meeting-shell.is-fullscreen .meeting-peer-tile {
+  aspect-ratio: auto;
+  height: 100%;
+}
+
+/* Hide chat in fullscreen unless the user explicitly opens it; if they do,
+   it stays as a side aside. */
+.meeting-shell:fullscreen .meeting-sub,
+.meeting-shell.is-fullscreen .meeting-sub {
+  display: none;
+}
+
+/* ─── Background picker modal ───────────────────────────────────────────── */
+.bg-picker {
+  width: min(640px, 95vw);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.25rem 1.4rem;
+}
+
+.bg-picker-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.bg-picker-head h3 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.bg-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 0.7rem;
+  overflow-y: auto;
+  padding: 0.1rem;
+}
+
+.bg-tile-wrap {
+  position: relative;
+}
+
+.bg-tile {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background-color: #0c1118;
+  background-size: cover;
+  background-position: center;
+  cursor: pointer;
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  padding: 0.4rem 0.55rem;
+  color: #fff;
+  font-size: 0.78rem;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+  transition: transform 80ms ease, box-shadow 120ms ease, border-color 120ms ease;
+}
+
+.bg-tile:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+}
+
+.bg-tile.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.bg-tile.bg-none {
+  background: repeating-linear-gradient(45deg, #0c1118, #0c1118 6px, #182232 6px, #182232 12px);
+}
+
+.bg-tile.bg-blur {
+  background: linear-gradient(160deg, #324b78, #16223d);
+  filter: blur(0.5px);
+}
+
+.bg-tile-label {
+  background: rgba(0, 0, 0, 0.45);
+  border-radius: 4px;
+  padding: 0.15rem 0.4rem;
+}
+
+.bg-tile-x {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(20, 20, 20, 0.85);
+  color: #fff;
+  font-size: 0.78rem;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+
+.bg-tile-x:hover {
+  background: var(--danger);
+}
+
+.bg-upload-row {
+  border-top: 1px solid var(--border);
+  padding-top: 0.85rem;
+}
+

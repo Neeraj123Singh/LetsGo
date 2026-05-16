@@ -13,8 +13,14 @@ import { meetingRoomWebSocketUrl } from "../meeting/ws";
 import { DEFAULT_ICE_SERVERS } from "../webrtc/iceServers";
 import { useLocalVideoEffects, type VideoEffectMode } from "../video/useLocalVideoEffects";
 import { fetchRoomMessages, touchRecent, type RoomMessage } from "../api/messages";
-import { lookupUserByEmail } from "../api/users";
 import { listContacts } from "../api/connections";
+import {
+  deleteBackground,
+  fileToDataUrl,
+  listBackgrounds,
+  uploadBackground,
+  type BackgroundView,
+} from "../api/backgrounds";
 
 type PeerInfo = { userId: string; email: string; displayName: string };
 
@@ -23,42 +29,88 @@ type Props = {
   mode: "audio" | "video";
   /** Optional: pre-known peer to auto-ring with an invite after joining. */
   autoRingPeerId?: string;
+  /** Optional: skips contacts lookup — pass from carousel / chats when available. */
+  autoRingPeerEmail?: string;
   /** When true (accepted incoming call), join without ringing anyone. */
   autoJoin?: boolean;
   onLeave?: () => void;
 };
 
+/** Compare user ids from URL vs DB (PostgreSQL emits lowercase canonical UUID strings). */
+function sameUserId(a: string | undefined, b: string | undefined): boolean {
+  if (!a || !b) return false;
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
 function shouldInitiate(myId: string, peerId: string): boolean {
-  return myId.localeCompare(peerId) < 0;
+  return (
+    myId.trim().toLowerCase().localeCompare(peerId.trim().toLowerCase()) < 0
+  );
+}
+
+/**
+ * Stream-bound `<video>` tile that always re-attaches `srcObject` whenever the
+ * stream changes — including when the *element* itself is unmounted/remounted.
+ * Using a callback ref instead of a useEffect+RefObject ensures a fresh mount
+ * always picks up the latest stream, which is the bug behind "turning camera
+ * off then back on shows a black tile".
+ */
+function StreamVideo({
+  stream,
+  className,
+  muted,
+}: {
+  stream: MediaStream | null;
+  className?: string;
+  muted?: boolean;
+}) {
+  const setRef = useCallback(
+    (el: HTMLVideoElement | null) => {
+      if (el && stream && el.srcObject !== stream) {
+        el.srcObject = stream;
+      }
+      if (el && !stream) {
+        el.srcObject = null;
+      }
+    },
+    [stream]
+  );
+  return <video ref={setRef} autoPlay playsInline muted={muted} className={className} />;
 }
 
 function PeerTile({ stream, label }: { stream: MediaStream; label: string }) {
-  const ref = useRef<HTMLVideoElement>(null);
-  useEffect(() => {
-    if (ref.current) {
-      ref.current.srcObject = stream;
-    }
-  }, [stream]);
   const hasVideo = stream.getVideoTracks().length > 0;
   return (
     <div className="video-tile meeting-peer-tile">
       <span className="video-label">{label}</span>
       {hasVideo ? (
-        <video ref={ref} autoPlay playsInline className="video-fit" />
+        <StreamVideo stream={stream} className="video-fit" />
       ) : (
         <div className="audio-only-tile">
           <div className="ring-avatar">{label.slice(0, 1).toUpperCase()}</div>
           <div className="muted small" style={{ marginTop: "0.5rem" }}>{label}</div>
-          <audio ref={ref as unknown as React.RefObject<HTMLAudioElement>} autoPlay />
+          <audio
+            ref={(el) => {
+              if (el && el.srcObject !== stream) el.srcObject = stream;
+            }}
+            autoPlay
+          />
         </div>
       )}
     </div>
   );
 }
 
-export function MeetingRoom({ roomId, mode, autoRingPeerId, autoJoin, onLeave }: Props) {
+export function MeetingRoom({
+  roomId,
+  mode,
+  autoRingPeerId,
+  autoRingPeerEmail,
+  autoJoin,
+  onLeave,
+}: Props) {
   const { user } = useAuth() as { user: UserResponse };
-  const { send: sendNotify, setOutboundCallId } = useNotify();
+  const { send: sendNotify, setOutboundCallId, pushToast } = useNotify();
 
   const isVideoCall = mode === "video";
   const [rawLocal, setRawLocal] = useState<MediaStream | null>(null);
@@ -72,31 +124,90 @@ export function MeetingRoom({ roomId, mode, autoRingPeerId, autoJoin, onLeave }:
   const [participants, setParticipants] = useState<Record<string, PeerInfo>>({});
   const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
 
+  // ─── Background effect (blur / image / saved-from-account) ────────────────
   const [effectMode, setEffectMode] = useState<VideoEffectMode>("none");
-  const [bgImage] = useState<HTMLImageElement | null>(null);
+  const [bgImage, setBgImage] = useState<HTMLImageElement | null>(null);
   const { displayStream, effectError } = useLocalVideoEffects(rawLocal, effectMode, bgImage);
   const displayStreamRef = useRef<MediaStream | null>(null);
   useEffect(() => {
     displayStreamRef.current = displayStream;
   }, [displayStream]);
 
-  // Screen sharing
+  const [backgrounds, setBackgrounds] = useState<BackgroundView[]>([]);
+  const [activeBackgroundId, setActiveBackgroundId] = useState<string | null>(null);
+  const [bgPickerOpen, setBgPickerOpen] = useState(false);
+  const [bgUploading, setBgUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const refreshBackgrounds = useCallback(async () => {
+    try {
+      const list = await listBackgrounds();
+      setBackgrounds(list);
+    } catch (e) {
+      pushToast(e instanceof Error ? e.message : "Could not load backgrounds", "error");
+    }
+  }, [pushToast]);
+
+  useEffect(() => {
+    void refreshBackgrounds();
+  }, [refreshBackgrounds]);
+
+  const applyBackground = useCallback((bg: BackgroundView | null) => {
+    if (!bg) {
+      setActiveBackgroundId(null);
+      setBgImage(null);
+      setEffectMode("none");
+      return;
+    }
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      setBgImage(img);
+      setEffectMode("background");
+    };
+    img.onerror = () => {
+      pushToast("Could not load background image", "error");
+    };
+    img.src = bg.dataUrl;
+    setActiveBackgroundId(bg.id);
+  }, [pushToast]);
+
+  const handleUpload = useCallback(async (file: File) => {
+    setBgUploading(true);
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      const label = file.name.replace(/\.[^.]+$/, "").slice(0, 120) || "Background";
+      const created = await uploadBackground(label, dataUrl);
+      setBackgrounds((prev) => [created, ...prev]);
+      applyBackground(created);
+      pushToast("Background uploaded", "success");
+    } catch (e) {
+      pushToast(e instanceof Error ? e.message : "Upload failed", "error");
+    } finally {
+      setBgUploading(false);
+    }
+  }, [applyBackground, pushToast]);
+
+  const handleRemoveBackground = useCallback(async (id: string) => {
+    try {
+      await deleteBackground(id);
+      setBackgrounds((prev) => prev.filter((b) => b.id !== id));
+      if (activeBackgroundId === id) {
+        applyBackground(null);
+      }
+    } catch (e) {
+      pushToast(e instanceof Error ? e.message : "Delete failed", "error");
+    }
+  }, [activeBackgroundId, applyBackground, pushToast]);
+
+  // ─── Screen sharing ───────────────────────────────────────────────────────
   const [screenShareStream, setScreenShareStream] = useState<MediaStream | null>(null);
   const screenShareRef = useRef<MediaStream | null>(null);
   useEffect(() => {
     screenShareRef.current = screenShareStream;
   }, [screenShareStream]);
 
-  // Track which stream each peer connection is currently sending video from
-  // ("camera" or "screen"). Used so toggling screen share updates the senders.
-  const localVideoRef = useRef<HTMLVideoElement>(null);
-  useEffect(() => {
-    if (!localVideoRef.current) return;
-    const next = screenShareStream ?? displayStream ?? rawLocal ?? null;
-    localVideoRef.current.srcObject = next;
-  }, [screenShareStream, displayStream, rawLocal]);
-
-  // Audio/video toggles
+  // ─── Audio/video toggles ──────────────────────────────────────────────────
   const [micOn, setMicOn] = useState(true);
   const [camOn, setCamOn] = useState(isVideoCall);
   useEffect(() => {
@@ -104,9 +215,39 @@ export function MeetingRoom({ roomId, mode, autoRingPeerId, autoJoin, onLeave }:
   }, [rawLocal, micOn]);
   useEffect(() => {
     rawLocal?.getVideoTracks().forEach((t) => (t.enabled = camOn));
-  }, [rawLocal, camOn]);
+    // Keep the canvas-effect stream in sync with the cam toggle too: when the
+    // user disables their cam, the segmenter's output should go dark instead
+    // of freezing on the last frame.
+    displayStream?.getVideoTracks().forEach((t) => (t.enabled = camOn));
+  }, [rawLocal, camOn, displayStream]);
 
-  // Recording (MediaRecorder of the local mix: chosen video stream + mic)
+  // The displayed local stream switches between screen-share, the effect
+  // canvas, and the raw camera in that priority order.
+  const localPreviewStream = useMemo<MediaStream | null>(() => {
+    if (screenShareStream) return screenShareStream;
+    if (displayStream) return displayStream;
+    return rawLocal;
+  }, [screenShareStream, displayStream, rawLocal]);
+
+  // ─── Fullscreen ───────────────────────────────────────────────────────────
+  const shellRef = useRef<HTMLElement | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  useEffect(() => {
+    const handler = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", handler);
+    return () => document.removeEventListener("fullscreenchange", handler);
+  }, []);
+  const toggleFullscreen = useCallback(() => {
+    if (document.fullscreenElement) {
+      void document.exitFullscreen().catch(() => undefined);
+      return;
+    }
+    if (shellRef.current?.requestFullscreen) {
+      void shellRef.current.requestFullscreen().catch(() => undefined);
+    }
+  }, []);
+
+  // ─── Recording (MediaRecorder of local mix) ───────────────────────────────
   const [recording, setRecording] = useState(false);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
@@ -115,13 +256,12 @@ export function MeetingRoom({ roomId, mode, autoRingPeerId, autoJoin, onLeave }:
   const pcsRef = useRef<Map<string, RTCPeerConnection>>(new Map());
   const pendingIceRef = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
 
-  // In-meeting chat
+  // ─── In-meeting chat ──────────────────────────────────────────────────────
   const [chatOpen, setChatOpen] = useState(false);
   const [chatMessages, setChatMessages] = useState<RoomMessage[]>([]);
   const [chatDraft, setChatDraft] = useState("");
   const chatScrollRef = useRef<HTMLDivElement>(null);
 
-  // Toggleable: which local video track to send to peers.
   const activeVideoStream = useCallback((): MediaStream | null => {
     if (screenShareRef.current) return screenShareRef.current;
     return displayStreamRef.current ?? rawLocalRef.current ?? null;
@@ -160,7 +300,6 @@ export function MeetingRoom({ roomId, mode, autoRingPeerId, autoJoin, onLeave }:
       if (pc) return pc;
       const videoStream = activeVideoStream();
       const audioStream = rawLocalRef.current;
-      // For audio-only calls, an audio stream is enough.
       if (!videoStream && !audioStream) {
         return null;
       }
@@ -368,6 +507,9 @@ export function MeetingRoom({ roomId, mode, autoRingPeerId, autoJoin, onLeave }:
       closeAllPeers();
       rawLocalRef.current?.getTracks().forEach((t) => t.stop());
       rawLocalRef.current = null;
+      if (document.fullscreenElement) {
+        void document.exitFullscreen().catch(() => undefined);
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId, isVideoCall]);
@@ -397,9 +539,25 @@ export function MeetingRoom({ roomId, mode, autoRingPeerId, autoJoin, onLeave }:
   // Once joined and rosters known, create offers to peers with higher IDs.
   useEffect(() => {
     if (!joined) return;
-    const peers = Object.values(participants).filter((p) => p.userId !== user.id);
+    const peers = Object.values(participants).filter((p) => !sameUserId(p.userId, user.id));
     peers.forEach((p) => void createOfferToPeer(p));
   }, [joined, participants, createOfferToPeer, user.id]);
+
+  const ringPeer = useCallback(
+    (email: string, callId?: string) => {
+      const id = callId ?? crypto.randomUUID();
+      setOutboundCallId(id);
+      const normalized = email.trim().toLowerCase();
+      sendNotify({
+        kind: "invite",
+        targetEmail: normalized,
+        roomId,
+        callId: id,
+        mode,
+      });
+    },
+    [mode, roomId, sendNotify, setOutboundCallId],
+  );
 
   // Auto-ring the intended peer once we're in the room.
   useEffect(() => {
@@ -407,24 +565,29 @@ export function MeetingRoom({ roomId, mode, autoRingPeerId, autoJoin, onLeave }:
     let cancelled = false;
     (async () => {
       try {
-        // We have peer's userId only; fetch their email via lookup.
-        // Easiest path: hit /v1/users/lookup with email — but we have id, not email.
-        // Workaround: ring via the listContacts emails. Skip for now — caller
-        // can also pass `peer` via URL but the simpler flow is to invite by email.
-        // We rely on the global notify socket; just track the outbound call ID.
         const callId = crypto.randomUUID();
         setOutboundCallId(callId);
-        // We need the peer email to send invite; pull it via the auth /api/connections list cached on Home.
-        // Simpler: call recent/touch so the peer shows up; the actual ring happens from the contact row.
         await touchRecent(autoRingPeerId, "call").catch(() => undefined);
         if (cancelled) return;
-        const contacts = await listContacts().catch(() => []);
-        const peer = contacts.find((c) => c.user.id === autoRingPeerId);
-        if (!peer) {
+
+        const hinted = autoRingPeerEmail?.trim().toLowerCase();
+        let emailToRing: string | null = hinted?.length ? hinted : null;
+        if (!emailToRing) {
+          const contacts = await listContacts().catch(() => []);
+          const peer = contacts.find((c) => sameUserId(c.user.id, autoRingPeerId));
+          emailToRing = peer?.user.email.trim().toLowerCase() ?? null;
+        }
+
+        if (!emailToRing) {
+          pushToast(
+            "Could not place outbound call — we need this person's email from your Contacts or Chats. Open the chat thread and tap call from there.",
+            "error",
+          );
           setOutboundCallId(null);
           return;
         }
-        await ringPeer(peer.user.email, callId);
+
+        ringPeer(emailToRing, callId);
       } catch {
         setOutboundCallId(null);
       }
@@ -433,27 +596,7 @@ export function MeetingRoom({ roomId, mode, autoRingPeerId, autoJoin, onLeave }:
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [joined, autoRingPeerId, autoJoin]);
-
-  const ringPeer = useCallback(
-    async (email: string, callId?: string) => {
-      const id = callId ?? crypto.randomUUID();
-      setOutboundCallId(id);
-      try {
-        await lookupUserByEmail(email).catch(() => undefined);
-        sendNotify({
-          kind: "invite",
-          targetEmail: email,
-          roomId,
-          callId: id,
-          mode,
-        });
-      } catch {
-        setOutboundCallId(null);
-      }
-    },
-    [mode, roomId, sendNotify, setOutboundCallId]
-  );
+  }, [joined, autoRingPeerId, autoRingPeerEmail, autoJoin, ringPeer]);
 
   // Load existing in-meeting chat history when the panel opens.
   useEffect(() => {
@@ -479,7 +622,6 @@ export function MeetingRoom({ roomId, mode, autoRingPeerId, autoJoin, onLeave }:
         video: { frameRate: 15 },
         audio: false,
       });
-      // When the user stops sharing via the browser chrome, end it cleanly.
       s.getVideoTracks()[0].addEventListener("ended", () => {
         setScreenShareStream((prev) => (prev === s ? null : prev));
       });
@@ -497,7 +639,6 @@ export function MeetingRoom({ roomId, mode, autoRingPeerId, autoJoin, onLeave }:
     const videoSrc = activeVideoStream();
     const audioSrc = rawLocalRef.current;
     if (!videoSrc && !audioSrc) return;
-    // Combine first video track + first audio track into a fresh stream.
     const combined = new MediaStream();
     videoSrc?.getVideoTracks().slice(0, 1).forEach((t) => combined.addTrack(t));
     audioSrc?.getAudioTracks().slice(0, 1).forEach((t) => combined.addTrack(t));
@@ -540,21 +681,44 @@ export function MeetingRoom({ roomId, mode, autoRingPeerId, autoJoin, onLeave }:
   }
 
   function leave() {
+    if (document.fullscreenElement) {
+      void document.exitFullscreen().catch(() => undefined);
+    }
     wsRef.current?.close();
     onLeave?.();
   }
 
   const peerTiles = Object.entries(remoteStreams);
 
-  const sortedChat = useMemo(() => [...chatMessages].sort((a, b) => a.createdAt.localeCompare(b.createdAt)), [chatMessages]);
+  const sortedChat = useMemo(
+    () => [...chatMessages].sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+    [chatMessages]
+  );
+
+  const showCamPreview = isVideoCall && camOn;
+
+  const shellClasses = [
+    "meeting-shell",
+    "call-page-shell",
+    chatOpen ? "with-chat" : "",
+    screenShareStream ? "is-sharing" : "",
+    isFullscreen ? "is-fullscreen" : "",
+  ].filter(Boolean).join(" ");
 
   return (
-    <section className={`meeting-shell call-page-shell ${chatOpen ? "with-chat" : ""}`}>
+    <section
+      ref={(el) => {
+        shellRef.current = el;
+      }}
+      className={shellClasses}
+    >
       <div className="meeting-card call-card">
         <header className="meeting-header">
           <div>
             <h2 className="meeting-title">{isVideoCall ? "Video" : "Audio"} call</h2>
-            <p className="muted meeting-sub">Room ID: <span className="mono">{roomId.slice(0, 8)}…</span></p>
+            <p className="muted meeting-sub">
+              Room ID: <span className="mono">{roomId.slice(0, 8)}…</span>
+            </p>
           </div>
           <div className="row">
             {joined ? <span className="badge-live">Live</span> : null}
@@ -566,25 +730,45 @@ export function MeetingRoom({ roomId, mode, autoRingPeerId, autoJoin, onLeave }:
         {status && !joined ? <div className="status-pill">{status}</div> : null}
         {effectError ? <div className="error">{effectError}</div> : null}
 
-        <div className="video-grid group-grid meeting-grid">
-          <div className="video-tile meeting-peer-tile local-highlight">
-            <span className="video-label">You {!camOn && isVideoCall ? "· camera off" : ""}</span>
-            {isVideoCall && camOn ? (
-              <video ref={localVideoRef} autoPlay playsInline muted className="video-fit" />
-            ) : (
-              <div className="audio-only-tile">
-                <div className="ring-avatar">{user.displayName.slice(0, 1).toUpperCase()}</div>
-                <div className="muted small">{user.displayName}</div>
-              </div>
-            )}
+        <div className="meeting-stage">
+          {/* Big screen-share viewer when active. */}
+          {screenShareStream ? (
+            <div className="video-tile screen-share-stage">
+              <span className="video-label">Screen sharing</span>
+              <StreamVideo stream={screenShareStream} muted className="video-fit" />
+            </div>
+          ) : null}
+
+          <div className="video-grid meeting-grid">
+            <div className="video-tile meeting-peer-tile local-highlight">
+              <span className="video-label">
+                You{!camOn && isVideoCall ? " · camera off" : ""}
+              </span>
+              {/* Always render the <video> element so toggling cam off/on
+                  doesn't lose the srcObject binding. We dim it via CSS while
+                  the camera is off so the user still sees a clean tile. */}
+              {isVideoCall ? (
+                <StreamVideo
+                  stream={localPreviewStream}
+                  muted
+                  className={`video-fit ${showCamPreview ? "" : "is-hidden"}`}
+                />
+              ) : null}
+              {!showCamPreview ? (
+                <div className="audio-only-tile">
+                  <div className="ring-avatar">{user.displayName.slice(0, 1).toUpperCase()}</div>
+                  <div className="muted small">{user.displayName}</div>
+                </div>
+              ) : null}
+            </div>
+            {peerTiles.map(([pid, stream]) => (
+              <PeerTile
+                key={pid}
+                stream={stream}
+                label={participants[pid]?.displayName ?? pid.slice(0, 8)}
+              />
+            ))}
           </div>
-          {peerTiles.map(([pid, stream]) => (
-            <PeerTile
-              key={pid}
-              stream={stream}
-              label={participants[pid]?.displayName ?? pid.slice(0, 8)}
-            />
-          ))}
         </div>
 
         <div className="call-controls">
@@ -616,6 +800,16 @@ export function MeetingRoom({ roomId, mode, autoRingPeerId, autoJoin, onLeave }:
               🖥
             </button>
           ) : null}
+          {isVideoCall ? (
+            <button
+              type="button"
+              className={`ctl-btn ${effectMode !== "none" ? "active" : ""}`}
+              onClick={() => setBgPickerOpen((v) => !v)}
+              title="Background effects"
+            >
+              ✨
+            </button>
+          ) : null}
           <button
             type="button"
             className={`ctl-btn ${recording ? "active" : ""}`}
@@ -632,16 +826,14 @@ export function MeetingRoom({ roomId, mode, autoRingPeerId, autoJoin, onLeave }:
           >
             💬
           </button>
-          {isVideoCall ? (
-            <select
-              className="effect-inline"
-              value={effectMode}
-              onChange={(e) => setEffectMode(e.target.value as VideoEffectMode)}
-            >
-              <option value="none">No effect</option>
-              <option value="blur">Blur</option>
-            </select>
-          ) : null}
+          <button
+            type="button"
+            className={`ctl-btn ${isFullscreen ? "active" : ""}`}
+            onClick={toggleFullscreen}
+            title={isFullscreen ? "Exit full screen" : "Enter full screen"}
+          >
+            {isFullscreen ? "🗗" : "🗖"}
+          </button>
           <button type="button" className="btn-leave" onClick={leave}>Leave</button>
         </div>
 
@@ -651,11 +843,98 @@ export function MeetingRoom({ roomId, mode, autoRingPeerId, autoJoin, onLeave }:
         </p>
       </div>
 
+      {bgPickerOpen && isVideoCall ? (
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setBgPickerOpen(false);
+          }}
+        >
+          <div className="modal-card bg-picker" role="dialog" aria-modal="true">
+            <header className="bg-picker-head">
+              <h3>Background effects</h3>
+              <button type="button" className="btn-icon" onClick={() => setBgPickerOpen(false)} title="Close">
+                ✕
+              </button>
+            </header>
+            <div className="bg-grid">
+              <button
+                type="button"
+                className={`bg-tile bg-none ${effectMode === "none" ? "active" : ""}`}
+                onClick={() => applyBackground(null)}
+              >
+                <span className="bg-tile-label">No effect</span>
+              </button>
+              <button
+                type="button"
+                className={`bg-tile bg-blur ${
+                  effectMode === "blur" || (effectMode === "background" && !activeBackgroundId) ? "active" : ""
+                }`}
+                onClick={() => {
+                  setActiveBackgroundId(null);
+                  setBgImage(null);
+                  setEffectMode("blur");
+                }}
+              >
+                <span className="bg-tile-label">Blur</span>
+              </button>
+              {backgrounds.map((bg) => (
+                <div key={bg.id} className="bg-tile-wrap">
+                  <button
+                    type="button"
+                    className={`bg-tile ${activeBackgroundId === bg.id ? "active" : ""}`}
+                    onClick={() => applyBackground(bg)}
+                    style={{ backgroundImage: `url(${bg.dataUrl})` }}
+                  >
+                    <span className="bg-tile-label">{bg.label}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="bg-tile-x"
+                    onClick={() => void handleRemoveBackground(bg.id)}
+                    title="Delete this background"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="bg-upload-row">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void handleUpload(f);
+                  if (fileInputRef.current) fileInputRef.current.value = "";
+                }}
+              />
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={bgUploading}
+              >
+                {bgUploading ? "Uploading…" : "Upload custom background"}
+              </button>
+              <p className="muted small" style={{ marginTop: "0.5rem" }}>
+                JPEG / PNG / WebP / GIF, up to 2 MB. Saved to your account so you can pick it again later.
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {chatOpen ? (
         <aside className="in-meeting-chat">
           <header className="imc-head">
             <h3>Meeting chat</h3>
-            <button type="button" className="btn-icon" onClick={() => setChatOpen(false)} title="Close">✕</button>
+            <button type="button" className="btn-icon" onClick={() => setChatOpen(false)} title="Close">
+              ✕
+            </button>
           </header>
           <div className="imc-scroll" ref={chatScrollRef}>
             {sortedChat.length === 0 ? (
@@ -670,7 +949,10 @@ export function MeetingRoom({ roomId, mode, autoRingPeerId, autoJoin, onLeave }:
                       {!mine ? <div className="bubble-author">{p?.displayName ?? "Guest"}</div> : null}
                       <div className="bubble-body">{m.body}</div>
                       <div className="bubble-time">
-                        {new Date(m.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        {new Date(m.createdAt).toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
                       </div>
                     </div>
                   </div>
@@ -686,7 +968,9 @@ export function MeetingRoom({ roomId, mode, autoRingPeerId, autoJoin, onLeave }:
               placeholder="Type a message…"
               maxLength={4000}
             />
-            <button type="submit" className="btn-primary" disabled={!chatDraft.trim()}>Send</button>
+            <button type="submit" className="btn-primary" disabled={!chatDraft.trim()}>
+              Send
+            </button>
           </form>
         </aside>
       ) : null}

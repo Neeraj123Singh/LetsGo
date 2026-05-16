@@ -1,9 +1,21 @@
 server:
   port: 8080
+  # Allow ~4 MB JSON bodies so the /backgrounds upload (a base64 data URL)
+  # fits comfortably under the per-image cap of ~3 MB enforced in the service.
+  tomcat:
+    max-http-form-post-size: 4MB
+    max-swallow-size: 4MB
+  max-http-request-header-size: 32KB
 
 spring:
   application:
     name: auth-service
+  codec:
+    max-in-memory-size: 4MB
+  servlet:
+    multipart:
+      max-file-size: 4MB
+      max-request-size: 4MB
   datasource:
     url: jdbc:postgresql://localhost:5432/letsgo
     username: letsgo
