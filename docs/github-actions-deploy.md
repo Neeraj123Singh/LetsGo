@@ -39,16 +39,24 @@ This is **opt-in** so forks and fresh clones do not fail on missing secrets.
 
 ---
 
-### C. Add the **repository variable** (turns deploy on)
+### C. Turn deploy on: **`DEPLOY_VIA_CI`**
 
-1. **Settings → Secrets and variables → Actions**.
-2. Open the **Variables** tab (not Secrets).
-3. **New repository variable**.
-4. **Name:** `DEPLOY_VIA_CI`
-5. **Value:** `true` (exactly this word, lowercase).
-6. Save.
+Use **either** approach (workflow expects value **`true`**):
 
-Without this variable, workflow job **`deploy-vm`** is **skipped** every time.
+**A — Repository variable (simplest)**
+
+1. **Settings → Secrets and variables → Actions → Variables** (repo-level tab).
+2. **New repository variable** → Name **`DEPLOY_VIA_CI`**, Value **`true`**.
+
+**B — Environment variable (e.g. “Production”)**
+
+1. **Settings → Environments → Production → Environment variables**.
+2. Add **`DEPLOY_VIA_CI`** = **`true`**.
+3. The workflow job **`deploy-vm`** must reference that environment (**`environment: Production`** in **`.github/workflows/ci.yml`**). If the job name doesn’t match yours (e.g. **`production`** vs **`Production`**), GitHub is **case-sensitive** — align the YAML with the exact environment name.
+
+If **`DEPLOY_VIA_CI`** only exists on an environment but the job does **not** declare **`environment: …`**, then **`vars.DEPLOY_VIA_CI`** is empty and the deploy job is **skipped**.
+
+Without this variable (repo or env), workflow job **`deploy-vm`** is **skipped** every time.
 
 ---
 

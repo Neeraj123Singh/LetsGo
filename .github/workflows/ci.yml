@@ -93,10 +93,13 @@ jobs:
         if: failure()
         run: docker compose logs --tail=120
 
-  # Opt-in CD: set repo variable DEPLOY_VIA_CI=true and configure SSH secrets (see README).
+  # Opt-in CD: set DEPLOY_VIA_CI=true (repository variable OR Production env variable)
+  # and configure SSH secrets. If the variable lives under Settings → Environments →
+  # Production, this job must declare `environment: Production` so `vars` resolves it.
   deploy-vm:
     name: Deploy (SSH + compose prod)
     runs-on: ubuntu-latest
+    environment: Production
     needs: [e2e-smoke]
     if: >-
       vars.DEPLOY_VIA_CI == 'true' &&
