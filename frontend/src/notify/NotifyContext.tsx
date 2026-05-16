@@ -13,6 +13,7 @@ import { useAuth } from "../auth/AuthContext";
 import { meetingNotifyWebSocketUrl } from "../meeting/ws";
 import type { DirectMessage } from "../api/messages";
 import { useCallRing } from "../audio/useCallRing";
+import { showIncomingCallNotification } from "../lib/notifications";
 
 export type IncomingCall = {
   callId: string;
@@ -85,14 +86,30 @@ export function NotifyProvider({ children }: { children: ReactNode }) {
   // Ring as long as a call modal is showing; stop the moment it goes away.
   useEffect(() => {
     if (incoming) {
-      ring.start();
+      void ring.start();
       return () => ring.stop();
     }
     ring.stop();
     return undefined;
   }, [incoming, ring]);
 
+  /** Prime Web Audio after any user gesture so incoming rings aren't silent (autoplay policy). */
+  useEffect(() => {
+    if (!user) return undefined;
+    const opts = { once: true, capture: true, passive: true } as const;
+    const gesture = () => {
+      void ring.unlock();
+    };
+    document.addEventListener("pointerdown", gesture, opts);
+    window.addEventListener("keydown", gesture, opts);
+    return () => {
+      document.removeEventListener("pointerdown", gesture, opts);
+      window.removeEventListener("keydown", gesture, opts);
+    };
+  }, [user, ring]);
+
   const dmListenersRef = useRef<Set<DmListener>>(new Set());
+
   const subscribeDM = useCallback((fn: DmListener) => {
     dmListenersRef.current.add(fn);
     return () => {
@@ -128,10 +145,23 @@ export function NotifyProvider({ children }: { children: ReactNode }) {
 
     function connect() {
       if (cancelled) return;
+      let url: string;
+      try {
+        url = meetingNotifyWebSocketUrl();
+      } catch {
+        retry += 1;
+        const delay = Math.min(15_000, 500 * 2 ** retry);
+        window.setTimeout(connect, delay);
+        return;
+      }
+
       let ws: WebSocket;
       try {
-        ws = new WebSocket(meetingNotifyWebSocketUrl());
+        ws = new WebSocket(url);
       } catch {
+        retry += 1;
+        const delay = Math.min(15_000, 500 * 2 ** retry);
+        window.setTimeout(connect, delay);
         return;
       }
       wsRef.current = ws;
@@ -152,14 +182,17 @@ export function NotifyProvider({ children }: { children: ReactNode }) {
         const kind = msg.kind as string;
         if (kind === "incoming-call") {
           const m = (msg.mode as string) === "audio" ? "audio" : "video";
-          setIncoming({
+          const payload: IncomingCall = {
             callId: String(msg.callId),
             roomId: String(msg.roomId),
             mode: m as "audio" | "video",
             fromUserId: String(msg.fromUserId),
             fromEmail: String(msg.fromEmail),
             fromDisplayName: String(msg.fromDisplayName),
-          });
+          };
+          showIncomingCallNotification(payload.fromDisplayName, payload.roomId.slice(0, 8));
+          void ring.unlock();
+          setIncoming(payload);
           return;
         }
         if (kind === "invite-error") {

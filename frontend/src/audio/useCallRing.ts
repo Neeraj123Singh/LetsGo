@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
 /**
  * Sound helpers for the global notification surface.
@@ -54,6 +54,18 @@ export function useCallRing() {
     setTimeout(() => tone(660, 220), 260);
   }, [tone]);
 
+  /**
+   * Browsers often start AudioContext in "suspended" until a user gesture.
+   * Call this after sign-in (we attach listeners in NotifyProvider) so an incoming ring can play immediately.
+   */
+  const unlock = useCallback(async () => {
+    const ctx = ensureCtx();
+    if (!ctx) return;
+    if (ctx.state === "suspended") {
+      await ctx.resume().catch(() => undefined);
+    }
+  }, [ensureCtx]);
+
   const stop = useCallback(() => {
     ringingRef.current = false;
     if (intervalRef.current) {
@@ -62,15 +74,19 @@ export function useCallRing() {
     }
   }, []);
 
-  const start = useCallback(() => {
+  const start = useCallback(async () => {
     stop();
     ringingRef.current = true;
+    const ctx = ensureCtx();
+    if (ctx?.state === "suspended") {
+      await ctx.resume().catch(() => undefined);
+    }
     ringOnce();
     intervalRef.current = setInterval(() => {
       if (!ringingRef.current) return;
       ringOnce();
     }, 1800);
-  }, [ringOnce, stop]);
+  }, [ensureCtx, ringOnce, stop]);
 
   const ping = useCallback(() => {
     tone(1200, 120, 0.07);
@@ -86,5 +102,5 @@ export function useCallRing() {
     };
   }, [stop]);
 
-  return { start, stop, ping };
+  return useMemo(() => ({ start, stop, ping, unlock }), [start, stop, ping, unlock]);
 }
