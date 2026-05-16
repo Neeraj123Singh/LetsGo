@@ -52,11 +52,15 @@ Use **either** approach (workflow expects value **`true`**):
 
 1. **Settings → Environments → Production → Environment variables**.
 2. Add **`DEPLOY_VIA_CI`** = **`true`**.
-3. The workflow job **`deploy-vm`** must reference that environment (**`environment: Production`** in **`.github/workflows/ci.yml`**). If the job name doesn’t match yours (e.g. **`production`** vs **`Production`**), GitHub is **case-sensitive** — align the YAML with the exact environment name.
+3. This repo’s **`deploy-vm`** job uses **`environment: Production`** so SSH secrets can live there too.
 
-If **`DEPLOY_VIA_CI`** only exists on an environment but the job does **not** declare **`environment: …`**, then **`vars.DEPLOY_VIA_CI`** is empty and the deploy job is **skipped**.
+**Important (GitHub limitation):** Environment variables are **not** visible in **job-level** **`if:`** conditions — GitHub evaluates those **before** the environment loads (you’d see **`null == 'true'`** in the log). Here the workflow gates deploy in **step 1** using **`vars.DEPLOY_VIA_CI`**, which **does** include Production variables once the job starts.
 
-Without this variable (repo or env), workflow job **`deploy-vm`** is **skipped** every time.
+You can still set **`DEPLOY_VIA_CI`** as a **repository** variable (**Actions → Variables**) if you prefer; both work inside steps.
+
+If **`DEPLOY_VIA_CI`** is unset or not **`true`**, the SSH deploy step is **skipped** (job still succeeds).
+
+Without **`DEPLOY_VIA_CI`** when you expect deploy — workflow job **`deploy-vm`** runs but **Deploy over SSH** is skipped — check the Actions log notice.
 
 ---
 
@@ -205,7 +209,7 @@ bash scripts/deploy.sh
 
 | Symptom | Fix |
 | ------- | --- |
-| **`deploy-vm` missing / skipped** | Add **`DEPLOY_VIA_CI`** on **Variables** tab (not Secrets). |
+| **`Deploy over SSH` skipped** | **`DEPLOY_VIA_CI`** must be **`true`** (Production env **or** repo Variables). Logs show **`null == 'true'`** only on older workflows — upgrade **`.github/workflows/ci.yml`** so the gate runs in a step. |
 | SSH failed | Keys, **`DEPLOY_USER`**, **`DEPLOY_HOST`**, **`authorized_keys`**. |
 | **`git pull`** failed | **`origin`**, branch **`main`**, private-repo auth on VM. |
 | Docker failed | Run **`bash scripts/deploy.sh`** manually on VM for logs. |

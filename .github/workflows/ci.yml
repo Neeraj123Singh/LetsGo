@@ -93,20 +93,32 @@ jobs:
         if: failure()
         run: docker compose logs --tail=120
 
-  # Opt-in CD: set DEPLOY_VIA_CI=true (repository variable OR Production env variable)
-  # and configure SSH secrets. If the variable lives under Settings → Environments →
-  # Production, this job must declare `environment: Production` so `vars` resolves it.
+  # Opt-in CD: DEPLOY_VIA_CI must be exactly `true`. Put it on **Production** env vars
+  # OR repo Actions variables — GitHub does NOT expose environment variables in job-level
+  # `if`, so the gate runs in step 1 after `environment: Production` is applied.
   deploy-vm:
     name: Deploy (SSH + compose prod)
     runs-on: ubuntu-latest
     environment: Production
     needs: [e2e-smoke]
     if: >-
-      vars.DEPLOY_VIA_CI == 'true' &&
       github.event_name == 'push' &&
       github.ref == 'refs/heads/main'
     steps:
+      - name: Check DEPLOY_VIA_CI
+        id: gate
+        env:
+          DEPLOY_FLAG: ${{ vars.DEPLOY_VIA_CI }}
+        run: |
+          if [ "${DEPLOY_FLAG}" = "true" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Deploy skipped::Set DEPLOY_VIA_CI to true (repo Actions Variables or Production environment variables)."
+          fi
+
       - name: Deploy over SSH
+        if: steps.gate.outputs.enabled == 'true'
         uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.DEPLOY_HOST }}
