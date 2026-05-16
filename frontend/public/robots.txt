@@ -1,0 +1,10 @@
+# Letsgo — allow public indexing of the SPA shell.
+# After you enable Google Search Console, add a full sitemap line, for example:
+# Sitemap: https://YOUR_DOMAIN/sitemap.xml
+
+User-agent: *
+Allow: /
+
+# App routes are SPA (same HTML); backends are not useful to crawl as pages.
+Disallow: /api/
+Disallow: /meeting/

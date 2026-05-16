@@ -9,6 +9,20 @@ React + Vite app with:
 
 Install from a deployed HTTPS origin: browser **Install app** / **Add to Home Screen**. Icons: **`public/favicon.svg`**, **`pwa-192.png`**, **`pwa-512.png`**, **`pwa-maskable-512.png`**, **`apple-touch-icon.png`**.
 
+## SEO & Google (discoverability)
+
+- **`public/robots.txt`** — allows indexing of `/`; **`Disallow`** for **`/api/`** and **`/meeting/`** (not useful as HTML pages).
+- **`index.html`** — `meta[name=description]`, **`meta robots: index,follow`**, and basic Open Graph / Twitter summary tags.
+
+**Checklist beyond the codebase**
+
+1. **DNS** — your domain’s **A** record → VM **public IP** (same as **`DOMAIN`** + Caddy HTTPS in **`docker-compose.prod.yml`**).
+2. **HTTPS** — site loads at **`https://YOUR_DOMAIN`** so browsers and Google trust it.
+3. **Google Search Console** — add your **`https://` URL** property, verify (DNS TXT is common), then **URL Inspection → Request indexing** for the homepage. Optional: submit a **`sitemap.xml`** once you host one with absolute URLs (many SPAs ship a tiny sitemap with just `/`).
+4. **Patience** — new sites often take days to appear; backlinks and consistent uptime help.
+
+**SPA note:** All routes serve the **same shell** (`index.html`); crawlers mainly see shared meta. Strong per-page titles/snippets need SSR/prerender or client-side **`document.title` updates** plus more advanced SEO if you need that later.
+
 ## Development
 
 ```bash
