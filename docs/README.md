@@ -6,6 +6,7 @@ Documentation for the **Letsgo** monorepo: a React SPA, **Spring Boot** auth ser
 
 - **`README.md`** (repository root) — run locally, architecture, CI, deployment
 - **`docs/deployment-current.md`** — Terraform + VM scripts + GitHub Actions: which files matter, flows, pros/cons
+- **`docs/github-actions-deploy.md`** — optional SSH CD after CI (`DEPLOY_VIA_CI`, secrets, VM prerequisites)
 - **`docs/https-tls.md`** — HTTPS at the edge (Caddy / Let’s Encrypt), dev HTTP, Postgres & coturn notes
 - **`docs/engineering-tradeoffs.md`** — technical pros/cons and performance ideas
 - **`docs/architecture/system-overview.md`** — services and data flow (implemented vs forward-looking)
@@ -26,6 +27,7 @@ Documentation for the **Letsgo** monorepo: a React SPA, **Spring Boot** auth ser
 ## Platform & deploy
 
 - **`docs/deployment-current.md`** — how CI vs Terraform vs VM deploy fit together (files, flows, pros/cons)
+- **`docs/github-actions-deploy.md`** — enable **`deploy-vm`** (SSH + **`scripts/deploy.sh`**) after green CI on **`main`**
 - **`docs/https-tls.md`** — TLS / HTTPS (Caddy, ACME), contrasts with dev and DB
 - **`docs/platform/free-tier-deployment.md`** — Oracle-style free tier (similar patterns apply to single-VM AWS)
 - **`docs/platform/platform-deployment-plan.md`** — broader platform rollout notes

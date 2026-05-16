@@ -18,7 +18,10 @@ ENV VITE_TURN_URL=$VITE_TURN_URL
 ENV VITE_TURN_USER=$VITE_TURN_USER
 ENV VITE_TURN_PASS=$VITE_TURN_PASS
 
-RUN npm run build
+RUN npm run build \
+  && test -f dist/sw.js \
+  && test -f dist/manifest.webmanifest \
+  && test -f dist/registerSW.js
 
 FROM nginx:1.27-alpine
 COPY nginx.conf /etc/nginx/conf.d/default.conf

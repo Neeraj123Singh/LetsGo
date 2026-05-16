@@ -1,6 +1,6 @@
 # How deployment works today
 
-This describes the **actually wired paths** in this repo: **GitHub Actions CI** (validation on every push/PR to `main`) and **manual infrastructure + VM deploy** (Terraform + Docker Compose on a single VM). There is **no automatic CD** from GitHub into AWS/OCI unless you add it yourself.
+This describes the **actually wired paths** in this repo: **GitHub Actions CI** (validation on every push/PR to `main`), **optional CD** (SSH + `scripts/deploy.sh` after CI on pushes to `main`), and **manual infrastructure + VM setup** (Terraform + Docker Compose on a single VM).
 
 ---
 
@@ -12,6 +12,7 @@ flowchart LR
     PR[Push / PR to main]
     GHA[.github/workflows/ci.yml]
     PR --> GHA
+    GHA --> DEP[deploy-vm optional SSH]
   end
 
   subgraph laptop [Your machine]
@@ -23,20 +24,22 @@ flowchart LR
   subgraph vm [Cloud VM]
     GIT[Repo clone / git pull]
     SETUP[scripts/setup.sh]
-    DEPLOY[scripts/deploy.sh]
+    DX[scripts/deploy.sh]
     COMPOSE[docker-compose.prod.yml]
     GIT --> SETUP
-    GIT --> DEPLOY
-    DEPLOY --> COMPOSE
+    GIT --> DX
+    DX --> COMPOSE
   end
 
-  GHA -. validates builds/tests .-> OFFLINE[Does not deploy here]
+  DEP -. SSH git pull + deploy.sh .-> vm
+  GHA -. validates builds/tests .-> QA[CI jobs]
   INFRA --> vm
 ```
 
 | Concern | Mechanism |
 | -------- | --------- |
 | **Quality gate before merge** | GitHub Actions builds frontend, runs Go/Java tests, smoke-tests Compose |
+| **Optional production refresh** | **`deploy-vm`** job (requires **`DEPLOY_VIA_CI=true`** + SSH secrets) — see **`docs/github-actions-deploy.md`** |
 | **Provision VM + network** | Terraform under `infra/aws` or `infra/oci` |
 | **Install Docker & clone repo** | Cloud-init on first boot (`cloud-init.yaml`) |
 | **Secrets & env** | `.env.prod` on the VM (`scripts/generate-env.sh`, template `.env.prod.example`) |
@@ -52,10 +55,13 @@ Workflow file: **`.github/workflows/ci.yml`**
 
 | Trigger | Purpose |
 | ------- | ------- |
-| `push` to **`main`** | Full CI after merge |
-| `pull_request` targeting **`main`** | Gate before merge |
+| `push` to **`main`** | Full CI after merge; **optional `deploy-vm`** after **`e2e-smoke`** succeeds |
+| `pull_request` targeting **`main`** | Gate before merge (**no deploy**) |
 
-Concurrency uses `cancel-in-progress` so newer pushes supersede stale runs on the same ref.
+Concurrency:
+
+- **`refs/heads/main`**: **`cancel-in-progress: false`** so two rapid merges do not cancel an in-flight deploy.
+- **Other refs** (PRs, feature branches): **`cancel-in-progress: true`** to save runner minutes.
 
 ### Jobs and responsibilities
 
@@ -65,22 +71,25 @@ Concurrency uses `cancel-in-progress` so newer pushes supersede stale runs on th
 | **meeting-go** | `services/meeting-go/` | `go test ./...` |
 | **auth-java** | `services/auth-java/` | `mvn -B test` |
 | **e2e-smoke** | repo root | Waits for **`docker compose`** (default **`docker-compose.yml`**) — frontend on `:3000`; installs Chrome; **`pytest tests/e2e`** |
+| **deploy-vm** | (remote over SSH) | **Skipped** unless repo variable **`DEPLOY_VIA_CI`** is **`true`**. Runs **`git pull`** on **`main`** + **`bash scripts/deploy.sh`** on the VM (`appleboy/ssh-action`). |
 
-`e2e-smoke` **`needs`** the three compile/test jobs so obvious breakage fails fast.
+`e2e-smoke` **`needs`** the three compile/test jobs so obvious breakage fails fast. **`deploy-vm`** **`needs`** **`e2e-smoke`**.
+
+Full secret/variable checklist: **`docs/github-actions-deploy.md`**.
 
 ### Pros and cons (GitHub Actions as implemented)
 
 | Pros | Cons |
 | ---- | ---- |
-| Reproducible checks on clean Ubuntu runners | **Not deployment**: VM is untouched |
-| Parallel jobs keep wall-clock reasonable | E2E stack is slower/heavier than unit-only CI |
-| Catches regressions in frontend build, JVM tests, Go tests, and basic routing | Compose smoke uses **dev-oriented** `docker-compose.yml`, not **`docker-compose.prod.yml`** |
-| Uses official actions (`checkout`, `setup-node`, `setup-go`, `setup-java`, `setup-python`) | E2E may need retries/timing tweaks if flaky under load |
+| Reproducible checks on clean Ubuntu runners | **E2E** does not exercise **`docker-compose.prod.yml`** / Caddy / Let’s Encrypt |
+| Optional **push-to-main** deploy without extra tooling | **GitHub-hosted runner → SSH**: you must allow SSH from the internet or use a runner in your VPC |
+| Parallel CI jobs keep wall-clock reasonable | Runner egress IPs change — restrictive SG “GitHub IPs only” is painful |
+| Uses maintained actions (`checkout`, `setup-*`, **`appleboy/ssh-action`**) | **`deploy-vm`** requires correct **`git`** credentials on the VM for private repos |
 
 ### Improving CI/CD later
 
-- Add **`workflow_dispatch`** or **`release`** triggers that SSH/rsync or push images to a registry and restart the VM — currently **out of scope** of the checked-in workflow.
-- Optionally mirror prod with a job that validates **`docker-compose.prod.yml`** build (requires secrets simulation or dummy `DOMAIN`).
+- Add **`workflow_dispatch`** on **`deploy-vm`** for manual redeploy without empty commits.
+- Build/push images to a registry and **`compose pull`** on the VM instead of building on the VM (lighter CI egress, heavier registry setup).
 - Cache Docker layers in GHA for faster e2e.
 
 ---
@@ -175,17 +184,19 @@ Details inside **`docker-compose.prod.yml`** include: **`postgres`**, **`migrate
 
 From laptop: **`make remote-deploy`** runs **`git pull`** + **`deploy.sh`** over SSH (requires **`Makefile`**’s **`VM_IP`** from **`terraform output`**).
 
+**Or** enable **`DEPLOY_VIA_CI`** + SSH secrets so **`deploy-vm`** runs automatically after green CI on **`main`** — **`docs/github-actions-deploy.md`**.
+
 ---
 
 ## 5. Summary trade-off table
 
 | Piece | Strength | Weakness |
 | ----- | -------- | -------- |
-| **GHA CI** | Fast feedback; blocks broken merges | Does not publish or restart prod |
-| **Terraform** | Infra as code; reproducible VM | Operational maturity (state locking, drift) is on you |
+| **GHA CI** | Fast feedback; blocks broken merges | Prod compose / TLS not exercised in default e2e |
+| **`deploy-vm`** | Hands-off refresh after merge | SSH exposure / runner trust boundary |
+| **Terraform** | Infra as code; repeatable VM | Operational maturity (state locking, drift) is on you |
 | **Docker Compose on one VM** | Simple ops model; matches README quickstarts | Vertical scaling only; deploy interrupts unless extended |
-| **Manual / scripted deploy** | Full control; no cloud secrets in GitHub | Human or custom automation step required |
-| **Prod vs CI Compose drift** | CI stays fast with dev compose | Prod-only issues (TLS, Caddy, TURN) not exercised in default CI |
+| **Manual deploy only** | No GitHub secrets | Requires discipline (`pull` + **`deploy.sh`**) |
 
 For **HTTPS / Let’s Encrypt / Caddy**, see **`docs/https-tls.md`**.
 

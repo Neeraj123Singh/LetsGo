@@ -157,7 +157,9 @@ On **push or PR to `main`**, **`.github/workflows/ci.yml`** runs:
 3. `mvn test` in `services/auth-java`
 4. **Docker Compose** full stack + **pytest** Selenium smoke tests against `http://localhost:3000`
 
-Continuous **deployment** to your VM is **not** wired by default (needs SSH keys / AWS secrets). Typical flow remains **Terraform + rsync + `scripts/deploy.sh`** on the server—see [Deployment](#deployment).
+**Automatic deploy (optional):** on **push** to **`main`** only (not PRs), after **`e2e-smoke`** succeeds, job **`deploy-vm`** can SSH to your VM, **`git pull`**, and run **`scripts/deploy.sh`**. Enable repo variable **`DEPLOY_VIA_CI=true`** and add SSH secrets — full checklist in **`docs/github-actions-deploy.md`**.
+
+Without that variable, production updates only when you **`git pull`** (or rsync) on the server and run **`docker compose … up -d --build`** (see **`scripts/deploy.sh`**). For PWA-specific checks after deploy, see **`frontend/README.md`**.
 
 ---
 
@@ -191,7 +193,8 @@ See **`infra/oci/README.md`** and **`docs/platform/free-tier-deployment.md`** (O
 |-----|---------|
 | **`docs/README.md`** | Index of design docs |
 | **`docs/architecture/system-overview.md`** | Services and data flows (implemented vs aspirational) |
-| **`docs/deployment-current.md`** | Terraform (AWS/OCI), VM scripts, GitHub Actions CI — files and trade-offs |
+| **`docs/deployment-current.md`** | Terraform (AWS/OCI), VM scripts, GitHub Actions CI/CD — files and trade-offs |
+| **`docs/github-actions-deploy.md`** | Optional automatic deploy after CI (`DEPLOY_VIA_CI`, SSH secrets) |
 | **`docs/https-tls.md`** | HTTPS (Caddy + Let’s Encrypt), dev HTTP, volumes, renewal |
 | **`docs/engineering-tradeoffs.md`** | Pros/cons per feature area and performance ideas |
 | **`docs/video-meeting-app/postgres-schema.md`** | Relational notes + link to **real** migrations |
