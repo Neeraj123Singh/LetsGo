@@ -7,7 +7,7 @@ type AuthState = {
   user: UserResponse | null;
   loading: boolean;
   error: string | null;
-  refresh: () => Promise<void>;
+  refresh: () => Promise<boolean>;
   signOut: () => void;
 };
 
@@ -19,20 +19,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (): Promise<boolean> => {
     setError(null);
     if (!getToken()) {
       setUser(null);
       setLoading(false);
-      return;
+      return false;
     }
     try {
       const me = await fetchMe();
       setUser(me);
+      return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not load profile");
       setUser(null);
       clearToken();
+      return false;
     } finally {
       setLoading(false);
     }

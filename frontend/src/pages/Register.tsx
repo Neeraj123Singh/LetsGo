@@ -1,9 +1,11 @@
 import { FormEvent, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { register } from "../api/auth";
+import { useAuth } from "../auth/AuthContext";
 
 export function Register() {
   const navigate = useNavigate();
+  const { refresh } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -16,7 +18,12 @@ export function Register() {
     setLoading(true);
     try {
       await register({ email, password, displayName });
-      navigate("/", { replace: true });
+      const ok = await refresh();
+      if (ok) {
+        navigate("/", { replace: true });
+      } else {
+        setError("Account created but could not load your profile. Try signing in.");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed");
     } finally {

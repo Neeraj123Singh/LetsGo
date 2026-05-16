@@ -1,9 +1,11 @@
 import { FormEvent, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { login } from "../api/auth";
+import { useAuth } from "../auth/AuthContext";
 
 export function Login() {
   const navigate = useNavigate();
+  const { refresh } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -15,7 +17,12 @@ export function Login() {
     setLoading(true);
     try {
       await login({ email, password });
-      navigate("/", { replace: true });
+      const ok = await refresh();
+      if (ok) {
+        navigate("/", { replace: true });
+      } else {
+        setError("Signed in but could not load your profile. Try again.");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign in failed");
     } finally {
