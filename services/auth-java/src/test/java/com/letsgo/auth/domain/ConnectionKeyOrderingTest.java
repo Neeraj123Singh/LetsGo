@@ -6,6 +6,8 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+
+//comment here
 /**
  * Canonical ordering must match PostgreSQL uuid comparison (byte-wise),
  * not Java UUID.compareTo (signed long halves).

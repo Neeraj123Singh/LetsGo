@@ -232,3 +232,4 @@ resource "aws_eip" "letsgo" {
 
   depends_on = [aws_internet_gateway.letsgo]
 }
+
