@@ -1,24 +1,30 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { register } from "../api/auth";
 import { useAuth } from "../auth/AuthContext";
 
 export function Register() {
   const navigate = useNavigate();
-  const { refresh } = useAuth();
+  const { user, loading: authBusy, finalizeAuthSession } = useAuth();
+
+  useEffect(() => {
+    if (!authBusy && user) {
+      navigate("/", { replace: true });
+    }
+  }, [authBusy, user, navigate]);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
-    setLoading(true);
+    setSubmitting(true);
     try {
-      await register({ email, password, displayName });
-      const ok = await refresh();
+      const authResp = await register({ email, password, displayName });
+      const ok = await finalizeAuthSession(authResp);
       if (ok) {
         navigate("/", { replace: true });
       } else {
@@ -27,7 +33,7 @@ export function Register() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed");
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   }
 
@@ -68,8 +74,8 @@ export function Register() {
             />
           </label>
           {error ? <p className="error">{error}</p> : null}
-          <button type="submit" disabled={loading}>
-            {loading ? "Creating…" : "Register"}
+          <button type="submit" disabled={submitting}>
+            {submitting ? "Creating…" : "Register"}
           </button>
         </form>
         <p className="footer-link">

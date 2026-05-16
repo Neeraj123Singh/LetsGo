@@ -1,6 +1,11 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { useNotify } from "../notify/NotifyContext";
+import { MeetingRoom } from "../call/MeetingRoom";
+import {
+  meetingPathWithQuery,
+  useActiveMeeting,
+} from "../meeting/ActiveMeetingContext";
 
 const NAV = [
   { to: "/", label: "Home", end: true, icon: "◎" },
@@ -12,8 +17,16 @@ export function AppShell() {
   const { user, signOut } = useAuth();
   const { toasts, incoming, acceptIncoming, declineIncoming } = useNotify();
   const navigate = useNavigate();
+  const { session, minimized, clearSession } = useActiveMeeting();
 
   if (!user) return null;
+
+  const expandedMeeting = Boolean(session && !minimized);
+
+  function handleSignOut() {
+    clearSession();
+    signOut();
+  }
 
   return (
     <div className="app-shell">
@@ -43,14 +56,30 @@ export function AppShell() {
               <div className="me-email" title={user.email}>{user.email}</div>
             </div>
           </div>
-          <button type="button" className="secondary btn-compact" onClick={signOut}>
+          <button type="button" className="secondary btn-compact" onClick={handleSignOut}>
             Sign out
           </button>
         </div>
       </aside>
 
-      <main className="app-main">
-        <Outlet />
+      <main className={`app-main${expandedMeeting ? " app-main--meeting-expanded" : ""}`}>
+        {expandedMeeting ? null : <Outlet />}
+        {session ? (
+          <MeetingRoom
+            key={session.roomId}
+            roomId={session.roomId}
+            mode={session.mode}
+            autoRingPeerId={session.autoRingPeerId}
+            autoRingPeerEmail={session.autoRingPeerEmail}
+            autoJoin={session.autoJoin}
+            minimized={minimized}
+            onExpand={() => navigate(meetingPathWithQuery(session))}
+            onLeave={() => {
+              clearSession();
+              navigate("/", { replace: true });
+            }}
+          />
+        ) : null}
       </main>
 
       <div className="toast-stack" aria-live="polite">

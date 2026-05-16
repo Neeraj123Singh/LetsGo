@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "./auth/AuthContext";
 import { NotifyProvider } from "./notify/NotifyContext";
+import { ActiveMeetingProvider } from "./meeting/ActiveMeetingContext";
 import { AppShell } from "./layout/AppShell";
 import { ProtectedRoute } from "./layout/ProtectedRoute";
 import { Login } from "./pages/Login";
@@ -23,7 +24,9 @@ export function App() {
             <Route
               element={
                 <ProtectedRoute>
-                  <AppShell />
+                  <ActiveMeetingProvider>
+                    <AppShell />
+                  </ActiveMeetingProvider>
                 </ProtectedRoute>
               }
             >

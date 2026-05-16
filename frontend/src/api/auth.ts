@@ -1,5 +1,20 @@
 import { apiFetch, clearToken, setToken } from "./client";
 
+/** Thrown when an auth API responds with !ok; preserves HTTP status for client handling. */
+export class ApiHttpError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "ApiHttpError";
+    this.status = status;
+  }
+}
+
+export function isApiHttpError(e: unknown): e is ApiHttpError {
+  return e instanceof ApiHttpError;
+}
+
 export type AuthResponse = {
   accessToken: string;
   userId: string;
@@ -57,7 +72,7 @@ export async function fetchMe(): Promise<UserResponse> {
   const res = await apiFetch("/api/users/me");
   if (!res.ok) {
     const err = await readError(res);
-    throw new Error(err);
+    throw new ApiHttpError(res.status, err);
   }
   return (await res.json()) as UserResponse;
 }

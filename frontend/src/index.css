@@ -706,6 +706,126 @@ button.secondary {
   overflow: auto;
 }
 
+/* Full-height call while route is `/call/...`; main content hidden in AppShell. */
+.app-main.app-main--meeting-expanded {
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.app-main.app-main--meeting-expanded .meeting-shell.call-page-shell {
+  flex: 1;
+  min-height: 0;
+  max-width: none;
+  margin: 0;
+  width: 100%;
+}
+
+@media (max-width: 768px) {
+  .app-main.app-main--meeting-expanded {
+    padding: 0;
+  }
+}
+
+/* Minimized dock is fixed corner; reserve space so lists don’t sit under controls. */
+.app-shell:has(.meeting-minimized-dock) .app-main {
+  padding-bottom: calc(6.5rem + env(safe-area-inset-bottom, 0px));
+}
+
+/* Floating pill when navigating away while still in-room */
+.meeting-minimized-dock {
+  position: fixed;
+  bottom: max(1rem, env(safe-area-inset-bottom, 0px));
+  right: max(1rem, env(safe-area-inset-right, 0px));
+  z-index: 1600;
+  max-width: min(380px, calc(100vw - 2rem));
+}
+
+.meeting-minimized-inner {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.65rem 0.85rem;
+  background: color-mix(in srgb, var(--card) 95%, black);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
+}
+
+.meeting-minimized-preview {
+  position: relative;
+  width: 72px;
+  height: 54px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #0c1118;
+  border: 1px solid var(--border);
+}
+
+.meeting-minimized-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.meeting-minimized-audio-ph {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: 1.35rem;
+  background: linear-gradient(145deg, #1e3a5f, color-mix(in srgb, var(--accent) 55%, #1e3a5f));
+  color: #062030;
+}
+
+.meeting-minimized-live {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 0.15rem 0.35rem;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #7ee787;
+}
+
+.meeting-minimized-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.meeting-minimized-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  line-height: 1.25;
+}
+
+.meeting-minimized-sub {
+  margin-top: 0.28rem;
+  line-height: 1.35;
+}
+
+.meeting-minimized-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+.meeting-minimized-actions button {
+  margin-top: 0;
+}
+
 .brand {
   display: flex;
   align-items: center;

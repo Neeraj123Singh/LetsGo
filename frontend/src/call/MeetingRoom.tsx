@@ -33,6 +33,11 @@ type Props = {
   autoRingPeerEmail?: string;
   /** When true (accepted incoming call), join without ringing anyone. */
   autoJoin?: boolean;
+  /** When user browses elsewhere, show compact dock instead of full meeting UI (call stays connected). */
+  minimized?: boolean;
+  /** Restore full meeting UI (typically navigates back to `/call/:roomId`). */
+  onExpand?: () => void;
+  /** When user navigates away from `/call/` while minimized, clears session via parent. */
   onLeave?: () => void;
 };
 
@@ -107,6 +112,8 @@ export function MeetingRoom({
   autoRingPeerId,
   autoRingPeerEmail,
   autoJoin,
+  minimized = false,
+  onExpand,
   onLeave,
 }: Props) {
   const { user } = useAuth() as { user: UserResponse };
@@ -688,6 +695,12 @@ export function MeetingRoom({
     onLeave?.();
   }
 
+  useEffect(() => {
+    if (minimized && document.fullscreenElement) {
+      void document.exitFullscreen().catch(() => undefined);
+    }
+  }, [minimized]);
+
   const peerTiles = Object.entries(remoteStreams);
 
   const sortedChat = useMemo(
@@ -704,6 +717,41 @@ export function MeetingRoom({
     screenShareStream ? "is-sharing" : "",
     isFullscreen ? "is-fullscreen" : "",
   ].filter(Boolean).join(" ");
+
+  if (minimized) {
+    return (
+      <aside className="meeting-minimized-dock" aria-label="Meeting in progress">
+        <div className="meeting-minimized-inner">
+          <div className="meeting-minimized-preview">
+            {isVideoCall ? (
+              <StreamVideo stream={localPreviewStream} muted className="meeting-minimized-video" />
+            ) : (
+              <div className="meeting-minimized-audio-ph">
+                {user.displayName.slice(0, 1).toUpperCase()}
+              </div>
+            )}
+            <span className="meeting-minimized-live">{joined ? "Live" : "…"}</span>
+          </div>
+          <div className="meeting-minimized-meta">
+            <div className="meeting-minimized-title">
+              {isVideoCall ? "Video" : "Audio"} · <span className="mono subtle">{roomId.slice(0, 8)}…</span>
+            </div>
+            <div className="meeting-minimized-sub subtle small">
+              Browsing — meeting stays active. Restore for full controls.
+            </div>
+          </div>
+          <div className="meeting-minimized-actions">
+            <button type="button" className="btn-primary btn-compact" onClick={() => onExpand?.()}>
+              Restore
+            </button>
+            <button type="button" className="btn-leave btn-compact" onClick={leave}>
+              Leave
+            </button>
+          </div>
+        </div>
+      </aside>
+    );
+  }
 
   return (
     <section

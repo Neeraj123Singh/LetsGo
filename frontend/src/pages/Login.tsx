@@ -1,23 +1,29 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { login } from "../api/auth";
 import { useAuth } from "../auth/AuthContext";
 
 export function Login() {
   const navigate = useNavigate();
-  const { refresh } = useAuth();
+  const { user, loading: authBusy, finalizeAuthSession } = useAuth();
+
+  useEffect(() => {
+    if (!authBusy && user) {
+      navigate("/", { replace: true });
+    }
+  }, [authBusy, user, navigate]);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
-    setLoading(true);
+    setSubmitting(true);
     try {
-      await login({ email, password });
-      const ok = await refresh();
+      const authResp = await login({ email, password });
+      const ok = await finalizeAuthSession(authResp);
       if (ok) {
         navigate("/", { replace: true });
       } else {
@@ -26,7 +32,7 @@ export function Login() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign in failed");
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   }
 
@@ -57,8 +63,8 @@ export function Login() {
             />
           </label>
           {error ? <p className="error">{error}</p> : null}
-          <button type="submit" disabled={loading}>
-            {loading ? "Signing in…" : "Sign in"}
+          <button type="submit" disabled={submitting}>
+            {submitting ? "Signing in…" : "Sign in"}
           </button>
         </form>
         <p className="footer-link">
