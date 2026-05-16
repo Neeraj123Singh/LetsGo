@@ -1,6 +1,14 @@
 # PostgreSQL Schema
 
-This schema stores strongly consistent business data: identities, meetings, participants, call sessions, and message audit history.
+## Implemented schema (source of truth)
+
+The **applied** database shape for this repo is defined by SQL migrations under **`migrations/go/`** (run automatically via Docker entrypoints before apps start). Treat the DDL snippets below as **design reference**—when they diverge from migrations, **migrations win**.
+
+Current migration files include users, connections (contacts), DM messages, meeting room metadata/messages/recents, and optional user-uploaded virtual backgrounds (`000004_create_user_backgrounds`).
+
+---
+
+This document also sketches broader relational modeling for a larger product: identities, meetings, participants, call sessions, and message audit history.
 
 ## Schema Relationship Diagram
 

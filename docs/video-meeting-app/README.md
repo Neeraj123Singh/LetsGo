@@ -11,35 +11,32 @@ This section applies the platform architecture to a video meeting product with:
 
 - `entity-diagram.md`
 - `postgres-schema.md`
-- `dynamodb-schema.md`
 - `system-design.md`
 - `data-flow-diagram.md`
 - `sequence-diagram.md`
 
 ## Design intent
 
-- Keep transactional truth in PostgreSQL.
-- Use DynamoDB for high-volume, low-latency chat and signaling state.
-- Use WebRTC for media plane and websocket signaling through backend services.
-- Keep observability, reliability, and scaling consistent with the platform standards.
+- Keep transactional truth in **PostgreSQL** (users, connections, messages, saved backgrounds—see **`migrations/go/`**).
+- Use **WebRTC** for media (mesh in the prototype) and **WebSockets** via **meeting-go** for signaling, invites, and chat fan-out within a room.
+- Optional future scaling (SFU, regional hubs, analytics pipeline) belongs in diagrams labeled **target**—see **`docs/engineering-tradeoffs.md`**.
 
 ## Prototype vs target (letsgo repo)
 
-The **checked-in runnable stack** uses **mesh WebRTC** (peer-to-peer with signaling via **meeting-go**), **PostgreSQL** for users, and **no SFU** in Docker by default. Invites use a **dedicated notify WebSocket** rather than a DynamoDB-backed signal queue. When you read `system-design.md` and `data-flow-diagram.md`, treat the SFU / DynamoDB / Elasticsearch paths as **forward-looking** unless explicitly labeled as the “prototype” slice. Session-level file lists live under **`docs/changes/`**.
+The **checked-in runnable stack** uses **mesh WebRTC**, **PostgreSQL** for persistence, **auth-java** for JWT + REST, and **meeting-go** for **room** + **notify** WebSockets plus HTTP APIs for DM/room history/recents. Invites use the **notify** channel (in-memory hub today).
+
+When you read `system-design.md` and `data-flow-diagram.md`, treat SFU / DynamoDB / Elasticsearch / analytics workers as **forward-looking** unless the section explicitly describes the **current** Docker Compose slice. Session-level notes live under **`docs/changes/`**.
 
 ## High-Level Diagram
 
 ```mermaid
 flowchart TD
-    FE[React Frontend] --> AUTH[Auth Service]
-    FE --> API[Backend API + WebSocket]
-    API --> PG[(PostgreSQL)]
-    API --> DDB[(DynamoDB)]
-    API --> ES[(Elasticsearch)]
-    API --> BUS[(Event Bus)]
-    BUS --> AN[Analytics Python]
-    BUS --> LMB[AWS Lambda]
-    API -. signaling .-> SFU[SFU + TURN/STUN]
+    FE[React SPA] --> AUTH[auth-java REST]
+    FE --> MTG[meeting-go WS + HTTP]
+    AUTH --> PG[(PostgreSQL)]
+    MTG --> PG
+    FE -. mesh media .-> FE
+    MTG -. TURN/STUN .-> TURN[coturn optional]
 ```
 
-**Current repo shortcut:** `FE --> AUTH` (auth-java) and `FE --> MTG[meeting-go WebSocket]` + `MTG --> PG`; mesh media between browsers.
+**Target-platform sketches** (SFU, DynamoDB fan-out, analytics bus) appear in older diagrams elsewhere—compare with **`docs/architecture/system-overview.md`**.

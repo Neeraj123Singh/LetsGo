@@ -2,11 +2,11 @@
 
 ## Services
 
-- **Frontend (React)**: user interface, session handling, API integration
-- **Backend (Go)**: core business APIs, orchestration, event publishing
-- **Meeting signaling (Go) — letsgo prototype**: dedicated `meeting-go` service for group WebSocket signaling, user lookup, and notify-channel invites (see `docs/changes/2026-05-04.md`)
-- **Analytics (Python + Lambda)**: event consumption, aggregation, analytical workloads
-- **Auth (Spring Boot)**: authentication, authorization, token issuance, user identity
+- **Frontend (React)**: SPA UI, JWT session handling, REST + WebSockets (`frontend/`)
+- **Meeting signaling + chat APIs (Go)**: `services/meeting-go` — room WebSocket for mesh signaling, notify WebSocket for invites/DM hints, HTTP for DM/room history and online lookup
+- **Auth (Spring Boot)**: `services/auth-java` — register/login, JWT issuance, contacts/connections, saved virtual backgrounds — backed by PostgreSQL
+- **Backend platform API (Go)** — *target*: separate orchestration/event API described in older diagrams; **not a separate runnable service** in this repo today (business logic lives in **auth-java** + **meeting-go**)
+- **Analytics (Python + Lambda)** — *target*: **not implemented** in this monorepo; see **`docs/engineering-tradeoffs.md`** for what exists vs aspirational docs
 
 ## Letsgo repository (current implementation slice)
 
@@ -19,19 +19,19 @@ The runnable code in this monorepo today is a **vertical slice** of the full pla
 | **Meeting (`services/meeting-go/`)** | JWT-validated room WebSocket for mesh signaling; HTTP email lookup with online presence; notify WebSocket for invite / accept / decline. |
 | **PostgreSQL + `migrations/go/`** | Shared user store; migrations run via Docker before apps start. |
 
-Media is **browser-to-browser mesh** in this slice (no SFU container yet). Target production topology still assumes an SFU, TURN, DynamoDB-backed signaling fanout, and the shared Go “platform” API; the diagrams in `docs/video-meeting-app/` describe that target while calling out where the prototype differs.
+Media is **browser-to-browser mesh** in this slice (no SFU container by default). Optional **coturn** provides TURN/STUN when configured. Older **`docs/video-meeting-app/`** diagrams may still sketch SFU/Dynamo/analytics—the **implemented** stack is Postgres + mesh + meeting-go hubs.
 
 ## Data and Search
 
-- **PostgreSQL**: transactional and relational data
-- **DynamoDB**: high-scale key-value and flexible NoSQL access patterns
-- **Elasticsearch**: full-text search and filtered discovery
+- **PostgreSQL**: single source of truth for users, connections, DM + room messages, saved backgrounds (`migrations/go/`)
+- **DynamoDB / Elasticsearch**: **not used** in the runnable codebase; retained only as forward-looking platform notes in some diagrams
 
 ## Platform Components
 
-- **Kubernetes (EKS)** for container orchestration
-- **Terraform** for infrastructure as code
-- **Jenkins** for CI/CD pipelines
+- **Docker Compose**: local and CI slice (`compose.yaml`, `docker-compose.prod.yml`)
+- **Kubernetes (EKS)** — optional production shape
+- **Terraform**: `infra/aws`, `infra/oci`
+- **GitHub Actions**: `.github/workflows/ci.yml` on push/PR to `main`
 - **Prometheus + Grafana** for metrics, dashboards, and alerts
 - **OpenTelemetry** for distributed tracing
 

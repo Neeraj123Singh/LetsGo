@@ -1,41 +1,42 @@
-# Microservices Platform Documentation
+# Documentation index
 
-This folder contains section-wise documentation for a 4-service architecture:
+Documentation for the **Letsgo** monorepo: a React SPA, **Spring Boot** auth service, **Go** meeting/signaling service, and **PostgreSQL** (see root **`README.md`** for run/test/deploy).
 
-1. Frontend UI in React
-2. Backend API in Go
-3. Analytics and messaging in Python and AWS Lambda
-4. Auth service in Java Spring Boot
+## Start here
 
-It also includes platform plans for Kubernetes, Terraform, Jenkins CI/CD, observability, and data systems.
+- **`README.md`** (repository root) — run locally, architecture, CI, deployment
+- **`docs/engineering-tradeoffs.md`** — technical pros/cons and performance ideas
+- **`docs/architecture/system-overview.md`** — services and data flow (implemented vs forward-looking)
 
-## Document Map
+## Product & design
 
-- `changes/README.md` - index of dated implementation session logs
-- `changes/2026-05-04.md` - example session: auth + meeting-go + frontend mesh/invite slice
-- `product-overview.md` - business and product-level overview, personas, and goals
-- `architecture/system-overview.md` - end-to-end architecture and technology choices
-- `monorepo-split/repo-strategy.md` - how to structure now and split into separate repos later
-- `platform/platform-deployment-plan.md` - shared infrastructure and rollout plan
-- `video-meeting-app/README.md` - design package for video meeting product use case
-- `video-meeting-app/entity-diagram.md` - ER diagram for core relational entities
-- `video-meeting-app/postgres-schema.md` - PostgreSQL schema and indexing strategy
-- `video-meeting-app/dynamodb-schema.md` - DynamoDB table design for chat/presence/signaling
-- `video-meeting-app/system-design.md` - end-to-end service design and runtime topology
-- `video-meeting-app/data-flow-diagram.md` - data flow across services and stores
-- `video-meeting-app/sequence-diagram.md` - request/response and realtime sequences
-- `services/frontend-react/development-plan.md`
-- `services/frontend-react/deployment-plan.md`
-- `services/backend-go/development-plan.md`
-- `services/backend-go/deployment-plan.md`
-- `services/analytics-python/development-plan.md`
-- `services/analytics-python/deployment-plan.md`
-- `services/auth-springboot/development-plan.md`
-- `services/auth-springboot/deployment-plan.md`
+- **`docs/product-overview.md`** — product framing
+- **`docs/video-meeting-app/README.md`** — video/call product design notes (**Postgres + mesh** today; SFU/Dynamo-style items are aspirational unless labeled)
+- **`docs/video-meeting-app/postgres-schema.md`** — relational notes + pointer to **`migrations/go/`** as **source of truth**
+- **`docs/video-meeting-app/system-design.md`**, **`data-flow-diagram.md`**, **`sequence-diagram.md`**, **`entity-diagram.md`** — diagrams (interpret with prototype vs target callouts in each file)
 
-## Recommended Starting Order
+## Per-service planning (historical / planning)
 
-1. Read `architecture/system-overview.md`
-2. Finalize `monorepo-split/repo-strategy.md`
-3. Execute `platform/platform-deployment-plan.md` foundation items
-4. Build one vertical slice across all 4 services
+- **`docs/services/auth-springboot/`** — auth service plans
+- **`docs/services/backend-go/`** — Go service plans (aligned with `meeting-go`)
+- **`docs/services/frontend-react/`** — frontend plans
+
+## Platform & deploy
+
+- **`docs/platform/free-tier-deployment.md`** — Oracle-style free tier (similar patterns apply to single-VM AWS)
+- **`docs/platform/platform-deployment-plan.md`** — broader platform rollout notes
+- **`infra/aws/README.md`**, **`infra/oci/README.md`** — Terraform instructions
+
+## Monorepo
+
+- **`docs/monorepo-split/repo-strategy.md`** — optional future repo split
+
+## Change log
+
+- **`docs/changes/README.md`** — index of dated session notes
+- **`docs/changes/2026-05-04.md`** — example slice (auth + meeting + mesh)
+
+## Removed / obsolete doc locations
+
+- **`docs/video-meeting-app/dynamodb-schema.md`** — **removed**; this repo does not use DynamoDB for the runnable stack.
+- **`docs/services/analytics-python/`** — **removed**; no Python analytics service in this codebase.
