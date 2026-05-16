@@ -163,6 +163,9 @@ Continuous **deployment** to your VM is **not** wired by default (needs SSH keys
 
 ## Deployment
 
+**End-to-end guide (Terraform files, CI workflow, scripts, Compose): [`docs/deployment-current.md`](docs/deployment-current.md).**  
+**HTTPS / certificates (Caddy, Let’s Encrypt, renewal): [`docs/https-tls.md`](docs/https-tls.md).**
+
 ### AWS VM (Terraform + Compose)
 
 High level:
@@ -188,6 +191,8 @@ See **`infra/oci/README.md`** and **`docs/platform/free-tier-deployment.md`** (O
 |-----|---------|
 | **`docs/README.md`** | Index of design docs |
 | **`docs/architecture/system-overview.md`** | Services and data flows (implemented vs aspirational) |
+| **`docs/deployment-current.md`** | Terraform (AWS/OCI), VM scripts, GitHub Actions CI — files and trade-offs |
+| **`docs/https-tls.md`** | HTTPS (Caddy + Let’s Encrypt), dev HTTP, volumes, renewal |
 | **`docs/engineering-tradeoffs.md`** | Pros/cons per feature area and performance ideas |
 | **`docs/video-meeting-app/postgres-schema.md`** | Relational notes + link to **real** migrations |
 | **`services/auth-java/README.md`**, **`services/meeting-go/README.md`** | Service-specific endpoints |
